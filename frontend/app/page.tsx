@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ChevronRight, ChevronDown, File, Scissors, Minimize2, Edit, Image, FileText } from 'lucide-react';
+import { ChevronRight, ChevronDown, File, Scissors, Minimize2, Edit, Image, FileText, CircleCheck } from 'lucide-react';
 
 export default function BentoPDFLanding() {
   const [openFaq, setOpenFaq] = useState(0);
@@ -110,10 +110,10 @@ export default function BentoPDFLanding() {
             {/* Navigation - Center */}
             <nav className="hidden md:flex items-center space-x-8 absolute left-1/2 transform -translate-x-1/2">
               <button className="text-gray-700 hover:text-blue-600 flex items-center font-medium transition-colors">
-                Home <ChevronDown className="w-4 h-4 ml-1" />
+                Home 
               </button>
-              <a href="#" className="text-gray-700 hover:text-blue-600 font-medium transition-colors">
-                All Tools
+              <a href="/all-tools" className="hidden md:flex items-center text-gray-700 hover:text-blue-600 font-medium transition-colors">
+                All Tools <ChevronDown className="w-4 h-4 ml-1" />
               </a>
             </nav>
             
@@ -142,17 +142,17 @@ export default function BentoPDFLanding() {
               Manage, convert, and edit PDF files easily without installing any software.
             </p>
             <div className="flex flex-wrap gap-4 mb-8">
-              <span className="flex items-center text-blue-600">
-                <span className="w-5 h-5 bg-blue-100 rounded-full flex items-center justify-center mr-2 text-xs">✓</span>
-                No Signups
+              <span className="flex bg-blue-100 rounded-2xl p-1 border border-blue-200 items-center text-blue-600 font-semibold">
+                <CircleCheck className="w-4 h-4 ml-1 mx-1" />
+                No Signups 
               </span>
-              <span className="flex items-center text-blue-600">
-                <span className="w-5 h-5 bg-blue-100 rounded-full flex items-center justify-center mr-2 text-xs">✓</span>
+              <span className="flex bg-blue-100 rounded-2xl p-1 border border-blue-200 items-center text-blue-600 font-semibold">
+                <CircleCheck className="w-4 h-4 ml-1 mx-1" />
                 Unlimited Use
               </span>
-              <span className="flex items-center text-blue-600">
-                <span className="w-5 h-5 bg-blue-100 rounded-full flex items-center justify-center mr-2 text-xs">✓</span>
-                Works Offline
+              <span className="flex bg-blue-100 rounded-2xl p-1 border border-blue-200 items-center text-blue-600 font-semibold">
+                <CircleCheck className="w-4 h-4 ml-1 mx-1" />
+                Works Offline 
               </span>
             </div>
             <button className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-3xl font-semibold flex items-center shadow-lg transition-all">
@@ -180,7 +180,7 @@ export default function BentoPDFLanding() {
               <div className={`w-12 h-12 ${tool.color} rounded-lg flex items-center justify-center mb-4`}>
                 {tool.icon}
               </div>
-              <h3 className="font-semibold text-gray-900 mb-2 flex items-center justify-between">
+              <h3 className="font-bold text-gray-900 mb-2 flex items-center justify-between">
                 {tool.title}
                 <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors" />
               </h3>
@@ -190,7 +190,7 @@ export default function BentoPDFLanding() {
         </div>
 
         <div className="text-center">
-          <button className="text-blue-600 hover:text-blue-700 font-semibold flex items-center mx-auto border-2 border-blue-600 px-6 py-3 rounded-lg hover:bg-blue-50 transition-all">
+          <button className="text-blue-600 hover:text-blue-700 font-semibold flex items-center mx-auto border-2 border-blue-600 px-6 py-3 rounded-3xl hover:bg-blue-50 transition-all">
             View All PDF Tools <ChevronRight className="w-5 h-5 ml-2" />
           </button>
         </div>
@@ -205,16 +205,8 @@ export default function BentoPDFLanding() {
               <p className="text-lg text-gray-600 mb-8">
                 Find quick answers to common questions about BentoPDF.
               </p>
-              <div className="relative w-64 h-64">
-                <div className="absolute bottom-0 left-0 w-32 h-32 bg-pink-500 rounded-3xl flex items-center justify-center text-white text-6xl font-bold transform rotate-6">
-                  ?
-                </div>
-                <div className="absolute top-0 right-0 w-40 h-40 bg-purple-500 rounded-full flex items-center justify-center text-white text-7xl font-bold">
-                  ?
-                </div>
-                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-24 h-24 bg-blue-500 rounded-2xl flex items-center justify-center text-white text-5xl font-bold rotate-12">
-                  ?
-                </div>
+              <div className="relative w-[410px] h-[276px]">
+                <img src="/asset/images/faq.svg" alt="faq" />
               </div>
             </div>
 
