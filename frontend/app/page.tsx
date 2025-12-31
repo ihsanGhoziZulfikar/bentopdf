@@ -1,6 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
+import Navbar from './components/navbar';
+import Footer from './components/footer';
+
 import { ChevronRight, ChevronDown, File, Scissors, Minimize2, Edit, Image, FileText, CircleCheck } from 'lucide-react';
 
 export default function BentoPDFLanding() {
@@ -95,35 +98,7 @@ export default function BentoPDFLanding() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between py-4">
-            {/* Logo - Left */}
-            <div className="flex items-center flex-shrink-0">
-              <img 
-                src="/asset/images/logo-bento.svg" 
-                alt="BentoPDF Logo" 
-                className="h-8 w-auto"
-              />
-            </div>
-            
-            {/* Navigation - Center */}
-            <nav className="hidden md:flex items-center space-x-8 absolute left-1/2 transform -translate-x-1/2">
-              <button className="text-gray-700 hover:text-blue-600 flex items-center font-medium transition-colors">
-                Home 
-              </button>
-              <a href="/all-tools" className="hidden md:flex items-center text-gray-700 hover:text-blue-600 font-medium transition-colors">
-                All Tools <ChevronDown className="w-4 h-4 ml-1" />
-              </a>
-            </nav>
-            
-            {/* Language Selector - Right */}
-            <button className="text-blue-600 hover:text-blue-700 flex items-center font-medium transition-colors flex-shrink-0">
-              English <ChevronDown className="w-4 h-4 ml-1" />
-            </button>
-          </div>
-        </div>
-      </header>
+      <Navbar />
 
       {/* Hero Section */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
@@ -135,7 +110,7 @@ export default function BentoPDFLanding() {
           </div>
 
           <div>
-            <h1 className="text-5xl font-bold text-gray-900 mb-4">
+            <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
               All-in-One <span className="text-blue-600">PDF Toolkit</span>
             </h1>
             <p className="text-xl text-gray-600 mb-6">
@@ -205,8 +180,8 @@ export default function BentoPDFLanding() {
               <p className="text-lg text-gray-600 mb-8">
                 Find quick answers to common questions about BentoPDF.
               </p>
-              <div className="relative w-[410px] h-[276px]">
-                <img src="/asset/images/faq.svg" alt="faq" />
+              <div className="relative w-full max-w-sm h-auto">
+                <img src="/asset/images/faq.svg" alt="faq" className="w-full h-auto" />
               </div>
             </div>
 
@@ -240,61 +215,7 @@ export default function BentoPDFLanding() {
       </section>
 
       {/* Footer */}
-      <footer className="bg-gray-50 text-gray-600 py-12 border-t border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid md:grid-cols-4 gap-8">
-            <div>
-              <div className="flex items-center space-x-2 mb-4">
-                <div className="flex items-center flex-shrink-0">
-                  <img 
-                    src="/asset/images/logo-bento.svg" 
-                    alt="BentoPDF Logo" 
-                    className="h-8 w-auto"
-                  />
-                </div>
-              </div>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                A web-based platform to manage and process PDF files quickly, easily, and securely—no installation required.
-              </p>
-            </div>
-
-            <div>
-              <h3 className="font-semibold text-gray-900 mb-4">Features</h3>
-              <ul className="space-y-2 text-sm">
-                <li><a href="#" className="text-gray-600 hover:text-gray-900">Merge PDF</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900">Split PDF</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900">PNG to PDF</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900">PDF to PNG</a></li>
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="font-semibold text-gray-900 mb-4">Support & Resources</h3>
-              <ul className="space-y-2 text-sm">
-                <li><a href="#" className="text-gray-600 hover:text-gray-900">How it works</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900">Help Center</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900">API Documentation</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900">Contact Us</a></li>
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="font-semibold text-gray-900 mb-4">Company & Legal</h3>
-              <ul className="space-y-2 text-sm">
-                <li><a href="#" className="text-gray-600 hover:text-gray-900">Terms of Service</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900">Privacy Policy</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900">Cookie Policy</a></li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="mt-12 pt-8 border-t border-gray-200 text-center">
-            <p className="text-sm text-gray-500">
-              © 2025 PT. Padepokan Tujuh Sembilan | All rights reserved.
-            </p>
-          </div>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }
