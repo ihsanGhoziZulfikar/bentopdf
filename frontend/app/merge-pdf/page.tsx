@@ -3,27 +3,42 @@
 import React, { useState, ChangeEvent } from 'react';
 import Link from 'next/link';
 
+// Interface untuk data response dari backend
+interface MergeResult {
+  download_url: string;
+  total_files: number;
+  file_size: string;
+}
+
 export default function MergePDF() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // --- STATE ---
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isMerging, setIsMerging] = useState(false);
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // UBAH 1: State untuk menyimpan hasil data dari Backend (URL & Size)
+  const [resultData, setResultData] = useState<MergeResult | null>(null);
 
   // 1. Fungsi saat user memilih file
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const filesArray = Array.from(e.target.files);
-      setSelectedFiles(filesArray);
-      setDownloadUrl(null);
+      // Tambahkan file baru ke array yang sudah ada (biar user bisa nambah terus)
+      const newFiles = Array.from(e.target.files);
+      setSelectedFiles((prev) => [...prev, ...newFiles]);
+
+      // Reset state hasil & error
+      setResultData(null);
       setErrorMsg(null);
     }
   };
 
+  const removeFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
   // 2. Fungsi Utama: Kirim ke Backend Express
-  // PERUBAHAN PENTING: Menambahkan event 'e' untuk mencegah reload
   const handleMerge = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
 
@@ -34,57 +49,46 @@ export default function MergePDF() {
 
     setIsMerging(true);
     setErrorMsg(null);
+    setResultData(null);
 
     try {
       const formData = new FormData();
+      // Append setiap file ke FormData dengan key 'files' (sesuai backend multer array)
       selectedFiles.forEach((file) => {
         formData.append('files', file);
       });
 
+      // Request ke Backend
       const response = await fetch('http://localhost:5000/api/merge', {
         method: 'POST',
         body: formData,
       });
 
+      // UBAH 2: Parse Response sebagai JSON (BUKAN BLOB)
+      const result = await response.json();
+
       if (!response.ok) {
-        // Fix: Berikan tipe data 'unknown' lalu cek propertinya
-        const errorData = (await response.json().catch(() => ({}))) as {
-          error?: string;
-        };
-        throw new Error(errorData.error || 'Merge process failed on server.');
+        throw new Error(
+          result.error || result.details || 'Merge process failed.'
+        );
       }
 
-      const blob = await response.blob();
-
-      // Buat URL
-      const url = window.URL.createObjectURL(blob);
-
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'bento-merged.pdf';
-      document.body.appendChild(a);
-      a.click();
-
-      // Cleanup
-      a.remove();
-      window.URL.revokeObjectURL(url);
-
-      // Optional: tampilkan UI sukses
-      setDownloadUrl(url);
-    } catch (error) {
-      // --- PERBAIKAN TYPE SCRIPT DI SINI ---
-      // Jangan pakai (err: any). Pakai 'error' biasa lalu di-cast.
+      // Simpan data sukses ke state
+      setResultData(result.data);
+    } catch (error: unknown) {
       console.error('Frontend Error:', error);
-
-      let message = 'Failed to connect to server or merge files.';
-      if (error instanceof Error) {
-        message = error.message;
-      }
-
+      const message =
+        error instanceof Error ? error.message : 'Failed to connect to server.';
       setErrorMsg(message);
     } finally {
       setIsMerging(false);
     }
+  };
+
+  const resetAll = () => {
+    setSelectedFiles([]);
+    setResultData(null);
+    setErrorMsg(null);
   };
 
   return (
@@ -94,12 +98,11 @@ export default function MergePDF() {
         <div className="container mx-auto px-4">
           <div className="flex justify-between items-center h-16">
             <div className="flex-shrink-0 flex items-center cursor-pointer">
-              <img
-                src="/images/favicon.svg"
-                alt="Bento PDF Logo"
-                className="h-8 w-8"
-              />
-              <span className="text-white font-bold text-xl ml-2">
+              {/* Placeholder Logo */}
+              <div className="h-8 w-8 bg-indigo-500 rounded flex items-center justify-center text-xs font-bold mr-2">
+                PDF
+              </div>
+              <span className="text-white font-bold text-xl">
                 <Link href="/">BentoPDF</Link>
               </span>
             </div>
@@ -123,12 +126,6 @@ export default function MergePDF() {
                 className="hover:text-indigo-400 transition-colors"
               >
                 Contact
-              </Link>
-              <Link
-                href="/"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                All Tools
               </Link>
             </div>
 
@@ -219,36 +216,70 @@ export default function MergePDF() {
             Combine multiple PDF files into one document securely.
           </p>
 
-          {/* --- AREA HASIL DOWNLOAD --- */}
-          {downloadUrl && (
-            <div className="mb-6 p-4 bg-green-900/30 border border-green-600 rounded-lg text-center animate-pulse">
-              <p className="text-green-400 font-bold mb-3">
-                ✅ Merge Successful!
-              </p>
+          {/* --- AREA HASIL DOWNLOAD (SUCCESS) --- */}
+          {resultData && (
+            <div className="mb-6 p-6 bg-green-900/30 border border-green-600 rounded-lg text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-900 mb-4">
+                <svg
+                  className="h-6 w-6 text-green-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </div>
+
+              <h3 className="text-xl font-bold text-white mb-2">
+                Merge Successful!
+              </h3>
+
+              <div className="flex justify-center gap-4 text-sm text-gray-300 mb-6">
+                <span>
+                  Files:{' '}
+                  <span className="font-bold text-white">
+                    {resultData.total_files}
+                  </span>
+                </span>
+                <span>|</span>
+                <span>
+                  Size:{' '}
+                  <span className="font-bold text-white">
+                    {resultData.file_size}
+                  </span>
+                </span>
+              </div>
+
+              {/* UBAH 3: Link Download menggunakan URL Statis dari Backend */}
               <a
-                href={downloadUrl}
-                download="bento-merged.pdf"
-                className="inline-block px-6 py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg transition-colors"
+                href={resultData.download_url}
+                download // Attribute download HTML5
+                target="_blank"
+                className="inline-block px-8 py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg transition-colors shadow-lg"
               >
                 Download Merged PDF
               </a>
+
               <button
-                onClick={() => {
-                  setDownloadUrl(null);
-                  setSelectedFiles([]);
-                }}
-                className="block mx-auto mt-3 text-sm text-gray-400 hover:text-white underline"
+                onClick={resetAll}
+                className="block mx-auto mt-4 text-sm text-gray-400 hover:text-white underline"
               >
                 Merge Another File
               </button>
             </div>
           )}
 
-          {/* --- DROP ZONE --- */}
-          {!downloadUrl && (
+          {/* --- DROP ZONE & FILE LIST (Hidden if success) --- */}
+          {!resultData && (
             <>
-              <div className="relative flex flex-col items-center justify-center w-full h-48 md:h-64 border-2 border-dashed border-gray-600 rounded-xl cursor-pointer bg-gray-900 hover:bg-gray-700 transition-colors duration-300">
-                <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center">
+              {/* Drop Zone */}
+              <div className="relative flex flex-col items-center justify-center w-full h-40 md:h-52 border-2 border-dashed border-gray-600 rounded-xl cursor-pointer bg-gray-900 hover:bg-gray-700 transition-colors duration-300 group">
+                <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center group-hover:-translate-y-1 transition-transform">
                   <svg
                     className="w-10 h-10 mb-3 text-gray-400"
                     fill="none"
@@ -277,44 +308,66 @@ export default function MergePDF() {
                   multiple
                   accept="application/pdf"
                   onChange={handleFileChange}
+                  disabled={isMerging}
                 />
               </div>
 
               {/* --- LIST FILES --- */}
               {selectedFiles.length > 0 && (
-                <div className="mt-6">
-                  <h3 className="text-white font-semibold mb-2">
-                    Selected Files ({selectedFiles.length}):
+                <div className="mt-6 animate-fade-in">
+                  <h3 className="text-white font-semibold mb-2 flex justify-between">
+                    <span>Selected Files ({selectedFiles.length})</span>
+                    <button
+                      onClick={() => setSelectedFiles([])}
+                      className="text-xs text-red-400 hover:text-red-300 underline"
+                    >
+                      Clear All
+                    </button>
                   </h3>
-                  <ul className="space-y-2 mb-6">
+
+                  <ul className="space-y-2 mb-6 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
                     {selectedFiles.map((file, index) => (
                       <li
                         key={index}
-                        className="flex items-center text-sm text-gray-300 bg-gray-700 px-3 py-2 rounded"
+                        className="flex items-center justify-between text-sm text-gray-300 bg-gray-700 px-3 py-2 rounded border border-gray-600"
                       >
-                        <span className="mr-2">📄</span>
-                        {file.name}{' '}
-                        <span className="text-gray-500 text-xs ml-2">
-                          ({(file.size / 1024).toFixed(1)} KB)
-                        </span>
+                        <div className="flex items-center truncate">
+                          <span className="mr-2 text-indigo-400">📄</span>
+                          <span className="truncate max-w-[200px] md:max-w-xs">
+                            {file.name}
+                          </span>
+                          <span className="text-gray-500 text-xs ml-2">
+                            ({(file.size / 1024).toFixed(1)} KB)
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => removeFile(index)}
+                          className="text-gray-400 hover:text-red-400 ml-2"
+                        >
+                          ✕
+                        </button>
                       </li>
                     ))}
                   </ul>
 
                   {/* ERROR MESSAGE */}
                   {errorMsg && (
-                    <div className="mb-4 p-3 bg-red-900/50 border border-red-500 text-red-200 text-sm rounded">
+                    <div className="mb-4 p-3 bg-red-900/50 border border-red-500 text-red-200 text-sm rounded text-center">
                       {errorMsg}
                     </div>
                   )}
 
                   {/* BUTTON MERGE */}
                   <button
-                    type="button" // <--- WAJIB: Agar tidak dianggap tombol submit form
+                    type="button"
                     onClick={handleMerge}
                     disabled={isMerging}
                     className={`w-full py-3 px-4 rounded-lg font-bold text-white transition-all 
-                            ${isMerging ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 shadow-lg hover:shadow-indigo-500/30'}`}
+                      ${
+                        isMerging
+                          ? 'bg-indigo-800 cursor-not-allowed opacity-70'
+                          : 'bg-indigo-600 hover:bg-indigo-500 shadow-lg hover:shadow-indigo-500/30'
+                      }`}
                   >
                     {isMerging ? (
                       <span className="flex items-center justify-center">
@@ -341,7 +394,7 @@ export default function MergePDF() {
                         Uploading & Merging...
                       </span>
                     ) : (
-                      'Merge PDF Now'
+                      `Merge ${selectedFiles.length} PDF Files`
                     )}
                   </button>
                 </div>
@@ -351,10 +404,10 @@ export default function MergePDF() {
 
           {/* --- INFO PRIVASI --- */}
           <div className="mt-6 p-4 bg-gray-900 rounded-lg border border-gray-700">
-            <p className="text-sm text-indigo-300">
-              Note: Files are uploaded securely to our server for processing and{' '}
-              <strong>automatically deleted</strong> immediately after the
-              download is ready.
+            <p className="text-xs text-gray-500 text-center">
+              Files are securely processed and{' '}
+              <strong>automatically deleted</strong> from our server after 15
+              minutes.
             </p>
           </div>
         </div>
@@ -362,23 +415,10 @@ export default function MergePDF() {
 
       {/* Footer */}
       <footer className="mt-16 border-t border-gray-700 py-12 bg-gray-800">
-        <div className="container mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            <div className="col-span-1">
-              <div className="flex items-center mb-4">
-                <img
-                  src="/images/favicon.svg"
-                  alt="Logo"
-                  className="h-8 w-8 mr-2"
-                />
-                <span className="text-xl font-bold text-white">BentoPDF</span>
-              </div>
-              <p className="text-gray-400 text-sm">
-                © 2025 BentoPDF. All rights reserved.
-              </p>
-            </div>
-            {/* ...Footer links... */}
-          </div>
+        <div className="container mx-auto px-4 text-center">
+          <p className="text-gray-400 text-sm">
+            © 2025 BentoPDF. All rights reserved.
+          </p>
         </div>
       </footer>
     </div>
