@@ -150,19 +150,27 @@ export default function BentoPDFLanding() {
           {tools.map((tool, index) => (
             <div
               key={index}
-              className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
+              className="bg-white p-6 rounded-2xl shadow-sm hover:shadow-lg transition-all cursor-pointer group border border-gray-100"
             >
-              <div className={`w-12 h-12 ${tool.color} rounded-lg flex items-center justify-center mb-4`}>
-                {tool.icon}
+              {/* Icon dan Title dalam satu baris */}
+              <div className="flex items-center gap-3 mb-3">
+                <div className={`w-14 h-14 ${tool.color} rounded-xl flex items-center justify-center flex-shrink-0`}>
+                  {tool.icon}
+                </div>
+                <h3 className="font-bold text-gray-900 text-base flex-1">
+                  {tool.title}
+                </h3>
+                <ChevronRight className="w-5 h-5 text-gray-400 group-hover:translate-x-1 transition-transform flex-shrink-0" />
               </div>
-              <h3 className="font-bold text-gray-900 mb-2 flex items-center justify-between">
-                {tool.title}
-                <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors" />
-              </h3>
-              <p className="text-sm text-gray-600">{tool.description}</p>
+              
+              {/* Description di bawah */}
+              <p className="text-sm text-gray-600 leading-relaxed">
+                {tool.description}
+              </p>
             </div>
           ))}
         </div>
+
 
         <div className="text-center">
           <button className="text-blue-600 hover:text-blue-700 font-semibold flex items-center mx-auto border-2 border-blue-600 px-6 py-3 rounded-3xl hover:bg-blue-50 transition-all">
