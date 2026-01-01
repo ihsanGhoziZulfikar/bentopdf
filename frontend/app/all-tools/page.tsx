@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import Navbar from '../components/navbar';
-import Footer from '../components/footer';
+import Footer from '../components/footer/main-footer';
 import { ChevronRight, FileImage, FileType, Globe, Code, FileText, Image, File, Folder, FilePlus, Scissors, Archive, Wrench, Edit, PenTool, Droplet, Lock, Unlock, Scan, FileSearch, Hash } from 'lucide-react';
 
 interface ToolCardProps {

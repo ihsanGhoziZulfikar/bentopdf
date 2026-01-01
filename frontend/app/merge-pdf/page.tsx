@@ -3,21 +3,101 @@
 import React, { useState, ChangeEvent } from 'react';
 import Link from 'next/link';
 import Navbar from '../components/navbar';
+import ToolsFooter from '../components/footer/tools-footer';
+import { CircleArrowUp, X, FileText } from 'lucide-react';
+
+interface UploadingFile {
+  file: File;
+  progress: number;
+  id: string;
+}
 
 export default function MergePDF() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // --- STATE ---
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [isMerging, setIsMerging] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Simulasi upload dengan progress
+  const simulateUpload = (file: File) => {
+    const fileId = `${file.name}-${Date.now()}`;
+    const newUploadingFile: UploadingFile = {
+      file,
+      progress: 0,
+      id: fileId
+    };
+
+    setUploadingFiles(prev => [...prev, newUploadingFile]);
+
+    const interval = setInterval(() => {
+      setUploadingFiles(prev => {
+        const updated = prev.map(uf => {
+          if (uf.id === fileId) {
+            const newProgress = Math.min(uf.progress + 10, 100);
+            return { ...uf, progress: newProgress };
+          }
+          return uf;
+        });
+
+        // Check if this file is complete
+        const completedFile = updated.find(uf => uf.id === fileId && uf.progress === 100);
+        if (completedFile) {
+          clearInterval(interval);
+          // Move to selectedFiles after a brief delay
+          setTimeout(() => {
+            setSelectedFiles(current => [...current, completedFile.file]);
+            setUploadingFiles(current => current.filter(uf => uf.id !== fileId));
+          }, 300);
+        }
+
+        return updated;
+      });
+    }, 100);
+  };
 
   // 1. Fungsi saat user memilih file
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const filesArray = Array.from(e.target.files);
-      setSelectedFiles(filesArray);
+      filesArray.forEach(file => {
+        if (file.type === 'application/pdf' && file.size <= 50 * 1024 * 1024) {
+          simulateUpload(file);
+        }
+      });
+      setDownloadUrl(null);
+      setErrorMsg(null);
+    }
+    // Reset input
+    e.target.value = '';
+  };
+
+  // Handle drag and drop
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const filesArray = Array.from(e.dataTransfer.files);
+      filesArray.forEach(file => {
+        if (file.type === 'application/pdf' && file.size <= 50 * 1024 * 1024) {
+          simulateUpload(file);
+        }
+      });
       setDownloadUrl(null);
       setErrorMsg(null);
     }
@@ -93,6 +173,12 @@ export default function MergePDF() {
     }
   };
 
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -111,8 +197,17 @@ export default function MergePDF() {
           {/* Upload Area */}
           <div className="lg:col-span-2 order-1 lg:order-1">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-              {selectedFiles.length === 0 ? (
-                <div className="border-2 border-dashed border-blue-300 rounded-lg p-6 sm:p-12 text-center bg-blue-50/30">
+              {selectedFiles.length === 0 && uploadingFiles.length === 0 ? (
+                <div 
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`border-2 border-dashed rounded-lg p-6 sm:p-12 text-center transition-colors ${
+                    isDragging 
+                      ? 'border-blue-500 bg-blue-50' 
+                      : 'border-blue-300 bg-blue-50/30'
+                  }`}
+                >
                   <div className="flex justify-center mb-4 sm:mb-6">
                     <div className="relative w-24 h-24 sm:w-32 sm:h-32">
                       <img src="/asset/images/upload.svg" alt="upload" className="w-full h-full object-contain" />
@@ -122,10 +217,8 @@ export default function MergePDF() {
                     Drag and drop your files here to start.
                   </p>
                   <p className="text-gray-500 mb-4 sm:mb-6 text-sm sm:text-base">or</p>
-                  <label className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-3 bg-blue-50 text-blue-600 rounded-full cursor-pointer hover:bg-blue-100 transition-colors border border-blue-200 text-sm sm:text-base">
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
+                  <label className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-3 bg-blue-100 text-blue-600 rounded-full cursor-pointer hover:bg-blue-200 transition-colors text-sm sm:text-base">
+                    <CircleArrowUp className='w-4 h-4 mx-2'/>
                     Browse
                     <input
                       type="file"
@@ -181,6 +274,40 @@ export default function MergePDF() {
                     </div>
                   )}
 
+                  {/* Uploading Files with Progress */}
+                  {uploadingFiles.map((uploadingFile) => (
+                    <div
+                      key={uploadingFile.id}
+                      className="flex items-start p-3 sm:p-4 bg-white rounded-lg border border-gray-200"
+                    >
+                      <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
+                        <div className="w-10 h-10 bg-blue-100 rounded flex items-center justify-center flex-shrink-0">
+                          <FileText className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-gray-900 truncate font-medium text-sm sm:text-base">
+                            {uploadingFile.file.name}
+                          </p>
+                          <p className="text-gray-500 text-xs sm:text-sm">
+                            {formatFileSize(uploadingFile.file.size)}
+                          </p>
+                          <div className="mt-2">
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div
+                                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                style={{ width: `${uploadingFile.progress}%` }}
+                              />
+                            </div>
+                            <div className="text-right text-xs text-gray-500 mt-1">
+                              {uploadingFile.progress}%
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Completed Files */}
                   {selectedFiles.map((file, index) => (
                     <div
                       key={index}
@@ -192,7 +319,7 @@ export default function MergePDF() {
                         </svg>
                         <div className="flex-1 min-w-0">
                           <p className="text-gray-900 truncate font-medium text-sm sm:text-base">{file.name}</p>
-                          <p className="text-gray-500 text-xs sm:text-sm">{(file.size / 1024).toFixed(1)} KB</p>
+                          <p className="text-gray-500 text-xs sm:text-sm">{formatFileSize(file.size)}</p>
                         </div>
                       </div>
                       <div className="flex items-center space-x-1 sm:space-x-2 ml-2 sm:ml-4">
@@ -285,29 +412,7 @@ export default function MergePDF() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 mt-8 sm:mt-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3 text-center sm:text-left">
-              <img src="/asset/images/logo-bento.svg" alt="logo" className='w-24 sm:w-30' />
-              <span className="text-gray-500 text-xs sm:text-sm">
-                © 2025 PT. Padepokan Tujuh Sembilan | All rights reserved.
-              </span>
-            </div>
-            <div className="flex flex-wrap justify-center gap-4 sm:gap-6">
-              <Link href="#" className="text-blue-600 hover:text-blue-700 text-xs sm:text-sm font-semibold">
-                How it works
-              </Link>
-              <Link href="#" className="text-blue-600 hover:text-blue-700 text-xs sm:text-sm font-semibold">
-                Help Center
-              </Link>
-              <Link href="#" className="text-blue-600 hover:text-blue-700 text-xs sm:text-sm font-semibold">
-                Contact Us
-              </Link>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <ToolsFooter />
     </div>
   );
 }

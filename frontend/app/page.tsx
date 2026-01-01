@@ -2,9 +2,9 @@
 
 import React, { useState } from 'react';
 import Navbar from './components/navbar';
-import Footer from './components/footer';
+import Footer from './components/footer/main-footer';
 
-import { ChevronRight, ChevronDown, File, Scissors, Minimize2, Edit, Image, FileText, CircleCheck } from 'lucide-react';
+import { ChevronRight, ChevronDown, File, Scissors, Minimize2, Edit, Image, FileText, CircleCheck, } from 'lucide-react';
 
 export default function BentoPDFLanding() {
   const [openFaq, setOpenFaq] = useState(0);
