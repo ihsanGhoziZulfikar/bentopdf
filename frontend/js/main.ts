@@ -1,20 +1,37 @@
 import { categories } from './config/tools.js';
-import { dom, switchView, hideAlert, showLoader, hideLoader, showAlert } from './ui.js';
+import {
+  dom,
+  switchView,
+  hideAlert,
+  showLoader,
+  hideLoader,
+  showAlert,
+} from './ui.js';
 import { state, resetState } from './state.js';
 import { ShortcutsManager } from './logic/shortcuts.js';
 import { createIcons, icons } from 'lucide';
 import * as pdfjsLib from 'pdfjs-dist';
 import '../css/styles.css';
 import { formatShortcutDisplay, formatStars } from './utils/helpers.js';
-import { APP_VERSION, injectVersion } from '../version.js';
-import { initI18n, applyTranslations, rewriteLinks, injectLanguageSwitcher, createLanguageSwitcher, t } from './i18n/index.js';
+import { APP_VERSION, injectVersion } from '../../src/version.js';
+import {
+  initI18n,
+  applyTranslations,
+  rewriteLinks,
+  injectLanguageSwitcher,
+  createLanguageSwitcher,
+  t,
+} from './i18n/index.js';
 
 const init = async () => {
   await initI18n();
   injectLanguageSwitcher();
   applyTranslations();
 
-  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.min.mjs',
+    import.meta.url
+  ).toString();
   if (__SIMPLE_MODE__) {
     const hideBrandingSections = () => {
       const nav = document.querySelector('nav');
@@ -44,7 +61,9 @@ const init = async () => {
         heroSection.style.display = 'none';
       }
 
-      const githubLink = document.querySelector('a[href*="github.com/alam00000/bentopdf"]');
+      const githubLink = document.querySelector(
+        'a[href*="github.com/alam00000/bentopdf"]'
+      );
       if (githubLink) {
         (githubLink as HTMLElement).style.display = 'none';
       }
@@ -79,7 +98,9 @@ const init = async () => {
       }
 
       // Hide "Used by companies" section
-      const usedBySection = document.querySelector('.hide-section') as HTMLElement;
+      const usedBySection = document.querySelector(
+        '.hide-section'
+      ) as HTMLElement;
       if (usedBySection) {
         usedBySection.style.display = 'none';
       }
@@ -112,7 +133,9 @@ const init = async () => {
         `;
         document.body.appendChild(simpleFooter);
 
-        const langContainer = simpleFooter.querySelector('#simple-mode-lang-switcher');
+        const langContainer = simpleFooter.querySelector(
+          '#simple-mode-lang-switcher'
+        );
         if (langContainer) {
           const switcher = createLanguageSwitcher();
           const dropdown = switcher.querySelector('div[role="menu"]');
@@ -165,12 +188,13 @@ const init = async () => {
     if (shortcutSettingsBtn) shortcutSettingsBtn.style.display = 'none';
   } else {
     if (keyboardShortcutBtn) {
-      keyboardShortcutBtn.textContent = navigator.userAgent.toUpperCase().includes('MAC')
+      keyboardShortcutBtn.textContent = navigator.userAgent
+        .toUpperCase()
+        .includes('MAC')
         ? '⌘ + K'
         : 'Ctrl + K';
     }
   }
-
 
   const categoryTranslationKeys: Record<string, string> = {
     'Popular Tools': 'tools:categories.popularTools',
@@ -262,7 +286,8 @@ const init = async () => {
       categoryGroup.className = 'category-group col-span-full';
 
       const title = document.createElement('h2');
-      title.className = 'text-xl font-bold text-indigo-400 mb-4 mt-8 first:mt-0 text-white';
+      title.className =
+        'text-xl font-bold text-indigo-400 mb-4 mt-8 first:mt-0 text-white';
       const categoryKey = categoryTranslationKeys[category.name];
       title.textContent = categoryKey ? t(categoryKey) : category.name;
 
@@ -299,7 +324,9 @@ const init = async () => {
         if (tool.subtitle) {
           const toolSubtitle = document.createElement('p');
           toolSubtitle.className = 'text-xs text-gray-400 mt-1 px-2';
-          toolSubtitle.textContent = toolKey ? t(`${toolKey}.subtitle`) : tool.subtitle;
+          toolSubtitle.textContent = toolKey
+            ? t(`${toolKey}.subtitle`)
+            : tool.subtitle;
           toolCard.appendChild(toolSubtitle);
         }
 
@@ -319,7 +346,10 @@ const init = async () => {
       let searchIndex = 0;
       let targetIndex = 0;
 
-      while (searchIndex < searchTerm.length && targetIndex < targetText.length) {
+      while (
+        searchIndex < searchTerm.length &&
+        targetIndex < targetText.length
+      ) {
         if (searchTerm[searchIndex] === targetText[targetIndex]) {
           searchIndex++;
         }
@@ -343,7 +373,8 @@ const init = async () => {
             card.querySelector('p')?.textContent.toLowerCase() || '';
 
           const isMatch =
-            fuzzyMatch(searchTerm, toolName) || fuzzyMatch(searchTerm, toolSubtitle);
+            fuzzyMatch(searchTerm, toolName) ||
+            fuzzyMatch(searchTerm, toolSubtitle);
 
           card.classList.toggle('hidden', !isMatch);
           if (isMatch) {
@@ -403,30 +434,28 @@ const init = async () => {
   createIcons({ icons });
   console.log('Please share our tool and share the love!');
 
-
   const githubStarsElements = [
     document.getElementById('github-stars-desktop'),
-    document.getElementById('github-stars-mobile')
+    document.getElementById('github-stars-mobile'),
   ];
 
-  if (githubStarsElements.some(el => el) && !__SIMPLE_MODE__) {
+  if (githubStarsElements.some((el) => el) && !__SIMPLE_MODE__) {
     fetch('https://api.github.com/repos/alam00000/bentopdf')
       .then((response) => response.json())
       .then((data) => {
         if (data.stargazers_count !== undefined) {
           const formattedStars = formatStars(data.stargazers_count);
-          githubStarsElements.forEach(el => {
+          githubStarsElements.forEach((el) => {
             if (el) el.textContent = formattedStars;
           });
         }
       })
       .catch(() => {
-        githubStarsElements.forEach(el => {
+        githubStarsElements.forEach((el) => {
           if (el) el.textContent = '-';
         });
       });
   }
-
 
   // Initialize Shortcuts System
   ShortcutsManager.init();
@@ -435,9 +464,13 @@ const init = async () => {
   const shortcutsTabBtn = document.getElementById('shortcuts-tab-btn');
   const preferencesTabBtn = document.getElementById('preferences-tab-btn');
   const shortcutsTabContent = document.getElementById('shortcuts-tab-content');
-  const preferencesTabContent = document.getElementById('preferences-tab-content');
+  const preferencesTabContent = document.getElementById(
+    'preferences-tab-content'
+  );
   const shortcutsTabFooter = document.getElementById('shortcuts-tab-footer');
-  const preferencesTabFooter = document.getElementById('preferences-tab-footer');
+  const preferencesTabFooter = document.getElementById(
+    'preferences-tab-footer'
+  );
   const resetShortcutsBtn = document.getElementById('reset-shortcuts-btn');
 
   if (shortcutsTabBtn && preferencesTabBtn) {
@@ -467,7 +500,9 @@ const init = async () => {
   }
 
   // Full-width toggle functionality
-  const fullWidthToggle = document.getElementById('full-width-toggle') as HTMLInputElement;
+  const fullWidthToggle = document.getElementById(
+    'full-width-toggle'
+  ) as HTMLInputElement;
   const toolInterface = document.getElementById('tool-interface');
 
   // Load saved preference
@@ -493,7 +528,10 @@ const init = async () => {
         uploader.classList.remove('max-w-2xl', 'max-w-5xl');
       } else {
         // Restore original max-width (most are max-w-2xl, add-stamps is max-w-5xl)
-        if (!uploader.classList.contains('max-w-2xl') && !uploader.classList.contains('max-w-5xl')) {
+        if (
+          !uploader.classList.contains('max-w-2xl') &&
+          !uploader.classList.contains('max-w-5xl')
+        ) {
           uploader.classList.add('max-w-2xl');
         }
       }
@@ -614,26 +652,36 @@ const init = async () => {
   }
 
   // Reserved shortcuts that commonly conflict with browser/OS functions
-  const RESERVED_SHORTCUTS: Record<string, { mac?: string; windows?: string }> = {
-    'mod+w': { mac: 'Closes tab', windows: 'Closes tab' },
-    'mod+t': { mac: 'Opens new tab', windows: 'Opens new tab' },
-    'mod+n': { mac: 'Opens new window', windows: 'Opens new window' },
-    'mod+shift+n': { mac: 'Opens incognito window', windows: 'Opens incognito window' },
-    'mod+q': { mac: 'Quits application (cannot be overridden)' },
-    'mod+m': { mac: 'Minimizes window' },
-    'mod+h': { mac: 'Hides window' },
-    'mod+r': { mac: 'Reloads page', windows: 'Reloads page' },
-    'mod+shift+r': { mac: 'Hard reloads page', windows: 'Hard reloads page' },
-    'mod+l': { mac: 'Focuses address bar', windows: 'Focuses address bar' },
-    'mod+d': { mac: 'Bookmarks page', windows: 'Bookmarks page' },
-    'mod+shift+t': { mac: 'Reopens closed tab', windows: 'Reopens closed tab' },
-    'mod+shift+w': { mac: 'Closes window', windows: 'Closes window' },
-    'mod+tab': { mac: 'Switches tabs', windows: 'Switches apps' },
-    'alt+f4': { windows: 'Closes window' },
-    'ctrl+tab': { mac: 'Switches tabs', windows: 'Switches tabs' },
-  };
+  const RESERVED_SHORTCUTS: Record<string, { mac?: string; windows?: string }> =
+    {
+      'mod+w': { mac: 'Closes tab', windows: 'Closes tab' },
+      'mod+t': { mac: 'Opens new tab', windows: 'Opens new tab' },
+      'mod+n': { mac: 'Opens new window', windows: 'Opens new window' },
+      'mod+shift+n': {
+        mac: 'Opens incognito window',
+        windows: 'Opens incognito window',
+      },
+      'mod+q': { mac: 'Quits application (cannot be overridden)' },
+      'mod+m': { mac: 'Minimizes window' },
+      'mod+h': { mac: 'Hides window' },
+      'mod+r': { mac: 'Reloads page', windows: 'Reloads page' },
+      'mod+shift+r': { mac: 'Hard reloads page', windows: 'Hard reloads page' },
+      'mod+l': { mac: 'Focuses address bar', windows: 'Focuses address bar' },
+      'mod+d': { mac: 'Bookmarks page', windows: 'Bookmarks page' },
+      'mod+shift+t': {
+        mac: 'Reopens closed tab',
+        windows: 'Reopens closed tab',
+      },
+      'mod+shift+w': { mac: 'Closes window', windows: 'Closes window' },
+      'mod+tab': { mac: 'Switches tabs', windows: 'Switches apps' },
+      'alt+f4': { windows: 'Closes window' },
+      'ctrl+tab': { mac: 'Switches tabs', windows: 'Switches tabs' },
+    };
 
-  function getReservedShortcutWarning(combo: string, isMac: boolean): string | null {
+  function getReservedShortcutWarning(
+    combo: string,
+    isMac: boolean
+  ): string | null {
     const reserved = RESERVED_SHORTCUTS[combo];
     if (!reserved) return null;
 
@@ -643,9 +691,19 @@ const init = async () => {
     return description;
   }
 
-  function showWarningModal(title: string, message: string, confirmMode: boolean = true): Promise<boolean> {
+  function showWarningModal(
+    title: string,
+    message: string,
+    confirmMode: boolean = true
+  ): Promise<boolean> {
     return new Promise((resolve) => {
-      if (!dom.warningModal || !dom.warningTitle || !dom.warningMessage || !dom.warningCancelBtn || !dom.warningConfirmBtn) {
+      if (
+        !dom.warningModal ||
+        !dom.warningTitle ||
+        !dom.warningMessage ||
+        !dom.warningCancelBtn ||
+        !dom.warningConfirmBtn
+      ) {
         resolve(confirmMode ? confirm(message) : (alert(message), true));
         return;
       }
@@ -684,15 +742,19 @@ const init = async () => {
       dom.warningCancelBtn.addEventListener('click', handleCancel);
 
       // Close on backdrop click
-      dom.warningModal.addEventListener('click', (e) => {
-        if (e.target === dom.warningModal) {
-          if (confirmMode) {
-            handleCancel();
-          } else {
-            handleConfirm();
+      dom.warningModal.addEventListener(
+        'click',
+        (e) => {
+          if (e.target === dom.warningModal) {
+            if (confirmMode) {
+              handleCancel();
+            } else {
+              handleConfirm();
+            }
           }
-        }
-      }, { once: true });
+        },
+        { once: true }
+      );
     });
   }
 
@@ -711,14 +773,15 @@ const init = async () => {
 
     const allShortcuts = ShortcutsManager.getAllShortcuts();
     const isMac = navigator.userAgent.toUpperCase().includes('MAC');
-    const allTools = categories.flatMap(c => c.tools);
+    const allTools = categories.flatMap((c) => c.tools);
 
-    categories.forEach(category => {
+    categories.forEach((category) => {
       const section = document.createElement('div');
       section.className = 'category-section mb-6 last:mb-0';
 
       const header = document.createElement('h3');
-      header.className = 'text-gray-400 text-xs font-bold uppercase tracking-wider mb-3 pl-1';
+      header.className =
+        'text-gray-400 text-xs font-bold uppercase tracking-wider mb-3 pl-1';
       // Translate category name
       const categoryKey = categoryTranslationKeys[category.name];
       header.textContent = categoryKey ? t(categoryKey) : category.name;
@@ -730,13 +793,14 @@ const init = async () => {
 
       let hasTools = false;
 
-      category.tools.forEach(tool => {
+      category.tools.forEach((tool) => {
         hasTools = true;
         const toolId = getToolId(tool);
         const currentShortcut = allShortcuts.get(toolId) || '';
 
         const item = document.createElement('div');
-        item.className = 'shortcut-item flex items-center justify-between p-3 bg-gray-900 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors';
+        item.className =
+          'shortcut-item flex items-center justify-between p-3 bg-gray-900 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors';
 
         const left = document.createElement('div');
         left.className = 'flex items-center gap-3';
@@ -757,13 +821,15 @@ const init = async () => {
 
         const input = document.createElement('input');
         input.type = 'text';
-        input.className = 'shortcut-input w-32 bg-gray-800 border border-gray-600 text-white text-center text-sm rounded px-2 py-1 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all';
+        input.className =
+          'shortcut-input w-32 bg-gray-800 border border-gray-600 text-white text-center text-sm rounded px-2 py-1 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all';
         input.placeholder = t('settings.clickToSet');
         input.value = formatShortcutDisplay(currentShortcut, isMac);
         input.readOnly = true;
 
         const clearBtn = document.createElement('button');
-        clearBtn.className = 'absolute -right-2 -top-2 bg-gray-700 hover:bg-red-600 text-white rounded-full p-0.5 hidden group-hover:block shadow-sm';
+        clearBtn.className =
+          'absolute -right-2 -top-2 bg-gray-700 hover:bg-red-600 text-white rounded-full p-0.5 hidden group-hover:block shadow-sm';
         clearBtn.innerHTML = '<i data-lucide="x" class="w-3 h-3"></i>';
         if (currentShortcut) {
           right.classList.add('group');
@@ -812,7 +878,10 @@ const init = async () => {
 
           // Ignore dead keys (used for accented characters on Mac with Option key)
           if (isDeadKey) {
-            input.value = formatShortcutDisplay(ShortcutsManager.getShortcut(toolId) || '', isMac);
+            input.value = formatShortcutDisplay(
+              ShortcutsManager.getShortcut(toolId) || '',
+              isMac
+            );
             return;
           }
 
@@ -828,22 +897,31 @@ const init = async () => {
             const existingToolId = ShortcutsManager.findToolByShortcut(combo);
 
             if (existingToolId && existingToolId !== toolId) {
-              const existingTool = allTools.find(t => getToolId(t) === existingToolId);
+              const existingTool = allTools.find(
+                (t) => getToolId(t) === existingToolId
+              );
               const existingToolName = existingTool?.name || existingToolId;
               const displayCombo = formatShortcutDisplay(combo, isMac);
 
-              const existingToolKey = existingTool ? toolTranslationKeys[existingTool.name] : null;
-              const translatedToolName = existingToolKey ? t(`${existingToolKey}.name`) : existingToolName;
+              const existingToolKey = existingTool
+                ? toolTranslationKeys[existingTool.name]
+                : null;
+              const translatedToolName = existingToolKey
+                ? t(`${existingToolKey}.name`)
+                : existingToolName;
 
               await showWarningModal(
                 t('settings.warnings.alreadyInUse'),
                 `<strong>${displayCombo}</strong> ${t('settings.warnings.assignedTo')}<br><br>` +
-                `<em>"${translatedToolName}"</em><br><br>` +
-                t('settings.warnings.chooseDifferent'),
+                  `<em>"${translatedToolName}"</em><br><br>` +
+                  t('settings.warnings.chooseDifferent'),
                 false
               );
 
-              input.value = formatShortcutDisplay(ShortcutsManager.getShortcut(toolId) || '', isMac);
+              input.value = formatShortcutDisplay(
+                ShortcutsManager.getShortcut(toolId) || '',
+                isMac
+              );
               input.classList.remove('border-indigo-500', 'text-indigo-400');
               input.blur();
               return;
@@ -855,14 +933,17 @@ const init = async () => {
               const shouldProceed = await showWarningModal(
                 t('settings.warnings.reserved'),
                 `<strong>${displayCombo}</strong> ${t('settings.warnings.commonlyUsed')}<br><br>` +
-                `"<em>${reservedWarning}</em>"<br><br>` +
-                `${t('settings.warnings.unreliable')}<br><br>` +
-                t('settings.warnings.useAnyway')
+                  `"<em>${reservedWarning}</em>"<br><br>` +
+                  `${t('settings.warnings.unreliable')}<br><br>` +
+                  t('settings.warnings.useAnyway')
               );
 
               if (!shouldProceed) {
                 // Revert display
-                input.value = formatShortcutDisplay(ShortcutsManager.getShortcut(toolId) || '', isMac);
+                input.value = formatShortcutDisplay(
+                  ShortcutsManager.getShortcut(toolId) || '',
+                  isMac
+                );
                 input.classList.remove('border-indigo-500', 'text-indigo-400');
                 input.blur();
                 return;
@@ -889,7 +970,10 @@ const init = async () => {
         };
 
         input.onblur = () => {
-          input.value = formatShortcutDisplay(ShortcutsManager.getShortcut(toolId) || '', isMac);
+          input.value = formatShortcutDisplay(
+            ShortcutsManager.getShortcut(toolId) || '',
+            isMac
+          );
           input.classList.remove('border-indigo-500', 'text-indigo-400');
         };
 
@@ -928,7 +1012,7 @@ const init = async () => {
     scrollToTopBtn.addEventListener('click', () => {
       window.scrollTo({
         top: 0,
-        behavior: 'instant'
+        behavior: 'instant',
       });
     });
   }
