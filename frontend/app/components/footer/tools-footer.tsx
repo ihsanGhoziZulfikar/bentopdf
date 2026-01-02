@@ -8,7 +8,7 @@ export default function ToolsFooter() {
             <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3 text-center sm:text-left">
               <img src="/asset/images/logo-bento.svg" alt="logo" className='w-24 sm:w-30' />
               <span className="text-gray-500 text-xs sm:text-sm">
-                © 2025 PT. Padepokan Tujuh Sembilan | All rights reserved.
+                © 2026 PT. Padepokan Tujuh Sembilan | All rights reserved.
               </span>
             </div>
             <div className="flex flex-wrap justify-center gap-4 sm:gap-6">
