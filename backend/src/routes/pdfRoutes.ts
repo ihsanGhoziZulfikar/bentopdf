@@ -7,6 +7,7 @@ import { splitPdf } from '../controllers/splitController';
 import { encryptPDF } from '../controllers/encryptController';
 import { repairPDF } from '../controllers/repairController';
 import { ocrPDF } from '../controllers/ocrController';
+import { pdfToWord } from '../controllers/pdfToWordController';
 
 const router = Router();
 
@@ -17,5 +18,6 @@ router.post('/split', upload.single('file'), splitPdf);
 router.post('/encrypt', upload.single('file'), encryptPDF);
 router.post('/repair', upload.single('file'), repairPDF);
 router.post('/ocr', upload.single('file'), ocrPDF);
+router.post('/pdf-to-word', upload.single('file'), pdfToWord);
 
 export default router;
