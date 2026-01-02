@@ -405,7 +405,7 @@ export default function JpgToPdf() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-lg w-auto text-center animate-in fade-in zoom-in duration-300">
             {/* Success Icon */}
-            <div className="flex justify-center mb-6">
+            <div className="flex justify-center">
               <Image className="w-50 h-50 text-white" src="/asset/images/success-modal.svg" alt="success" width={50} height={50} />
             </div>
 
@@ -439,7 +439,7 @@ export default function JpgToPdf() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center animate-in fade-in zoom-in duration-300">
             {/* Error Icon */}
-            <div className="flex justify-center mb-6">
+            <div className="flex justify-center">
               <Image className="w-50 h-50 text-white" src="/asset/images/failed-modal.svg" alt="success" width={50} height={50} />
             </div>
 
