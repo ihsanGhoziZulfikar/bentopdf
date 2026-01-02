@@ -127,9 +127,9 @@ export default function BentoPDFTools() {
         <section className="mb-12">
           <h2 className="text-2xl font-bold text-gray-900 mb-6">Analyze PDF</h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-6">
-            <ToolCard icon={Scan} title="OCR PDF" description="Extract accurate text from scanned or image-based PDF files." color="orange" link="/tools/ocr-pdf" />
-            <ToolCard icon={FileSearch} title="Summarize PDF" description="Generate a concise summary to quickly understand PDF content." color="orange" link="/tools/summarize-pdf" />
-            <ToolCard icon={Hash} title="Word Count PDF" description="Quickly view the total word count of your PDF." color="orange" link="/tools/word-count-pdf" />
+            <ToolCard icon={Scan} title="OCR PDF" description="Extract accurate text from scanned or image-based PDF files." color="orange" link="/ocr-pdf" />
+            <ToolCard icon={FileSearch} title="Summarize PDF" description="Generate a concise summary to quickly understand PDF content." color="orange" link="/summarize-pdf" />
+            <ToolCard icon={Hash} title="Word Count PDF" description="Quickly view the total word count of your PDF." color="orange" link="/word-count-pdf" />
           </div>
         </section>
       </main>
