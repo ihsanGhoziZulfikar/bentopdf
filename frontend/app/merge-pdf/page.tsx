@@ -125,6 +125,7 @@ export default function MergePDF() {
         formData.append('files', file);
       });
 
+      // --- LANGKAH 1: Request Merge ke API ---
       const response = await fetch('http://localhost:5000/api/merge', {
         method: 'POST',
         body: formData,
@@ -137,27 +138,42 @@ export default function MergePDF() {
         throw new Error(errorData.error || 'Merge process failed on server.');
       }
 
-      const blob = await response.blob();
+      // --- LANGKAH 2: Ambil URL dari JSON Response ---
+      const result = await response.json();
+      const pdfUrl = result.data.download_url; // URL dari backend (http://localhost:5000/dl/...)
+
+      // ============================================================
+      // PERBAIKAN DISINI (HAPUS FETCH MANUAL YANG BIKIN ERROR)
+      // ============================================================
+
+      // Kita langsung set URL download agar tombol hijau muncul
+      setDownloadUrl(pdfUrl);
+
+      // (Opsional) Trigger auto-download tanpa fetch blob
+      // Kita buat elemen <a> sementara dan klik secara programatis
+      const link = document.createElement('a');
+      link.href = pdfUrl;
+      // Note: Atribut 'download' kadang diabaikan browser jika beda port (cross-origin),
+      // jadi nama file akan mengikuti nama asli dari server.
+      link.setAttribute('download', '');
+      link.setAttribute('target', '_blank'); // Jaga-jaga buka tab baru jika download gagal
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // --- KODE LAMA DI BAWAH INI DIHAPUS SAJA ---
+      /* const fileResponse = await fetch(pdfUrl);
+      if (!fileResponse.ok) throw new Error('Failed to download...');
+      const blob = await fileResponse.blob();
       const url = window.URL.createObjectURL(blob);
-
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'bento-merged.pdf';
-      document.body.appendChild(a);
-      a.click();
-
-      a.remove();
-      window.URL.revokeObjectURL(url);
-
-      setDownloadUrl(url);
+      ...
+      */
     } catch (error) {
       console.error('Frontend Error:', error);
-
       let message = 'Failed to connect to server or merge files.';
       if (error instanceof Error) {
         message = error.message;
       }
-
       setErrorMsg(message);
     } finally {
       setIsMerging(false);

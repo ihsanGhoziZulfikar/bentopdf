@@ -42,7 +42,7 @@ export const categories = [
         subtitle: 'Reduce the file size of your PDF.',
       },
       {
-        href: '/edit-pdf',
+        href: '/pdf-editor',
         name: 'PDF Editor',
         icon: PocketKnife,
         subtitle:
