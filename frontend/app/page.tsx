@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import Navbar from './components/navbar';
 import Footer from './components/footer/main-footer';
+// 1. Import Link dari Next.js
+import Link from 'next/link'; 
 
 import { ChevronRight, ChevronDown, File, Scissors, Minimize2, Edit, Image, FileText, CircleCheck, } from 'lucide-react';
 
@@ -14,61 +16,71 @@ export default function BentoPDFLanding() {
       icon: <File className="w-6 h-6" />,
       title: "Merge PDF",
       description: "Combine multiple PDF files into a single, well-organized document",
-      color: "bg-red-100 text-red-600"
+      color: "bg-red-100 text-red-600",
+      path: "/merge-pdf" 
     },
     {
       icon: <Scissors className="w-6 h-6" />,
       title: "Split PDF",
       description: "Separate a PDF file into multiple documents by the pages you choose",
-      color: "bg-pink-100 text-pink-600"
+      color: "bg-pink-100 text-pink-600",
+      path: "/split-pdf"
     },
     {
       icon: <Minimize2 className="w-6 h-6" />,
       title: "Compress PDF",
       description: "Reduce PDF file size while maintaining readable quality",
-      color: "bg-red-100 text-red-600"
+      color: "bg-red-100 text-red-600",
+      path: "/compress-pdf"
     },
     {
       icon: <Edit className="w-6 h-6" />,
       title: "PDF Editor",
       description: "Annotate, highlight, redact, comment, add text and images, search and view PDFs",
-      color: "bg-green-100 text-green-600"
+      color: "bg-green-100 text-green-600",
+      path: "/pdf-editor"
     },
     {
       icon: <FileText className="w-6 h-6" />,
       title: "OCR PDF",
       description: "Extract editable text from scanned or image-based PDF files",
-      color: "bg-orange-100 text-orange-600"
+      color: "bg-orange-100 text-orange-600",
+      path: "/ocr-pdf"
     },
     {
       icon: <Image className="w-6 h-6" />,
       title: "JPG to PDF",
       description: "Combine JPG images into a single, well-structured PDF document",
-      color: "bg-orange-100 text-orange-600"
+      color: "bg-orange-100 text-orange-600",
+      path: "convert-pdf/jpg-to-pdf"
     },
     {
       icon: <Image className="w-6 h-6" />,
       title: "PNG to PDF",
       description: "Convert PNG images into a PDF while maintaining image quality and transparency",
-      color: "bg-yellow-100 text-yellow-600"
+      color: "bg-yellow-100 text-yellow-600",
+      path: "convert-pdf/png-to-pdf"
     },
     {
       icon: <FileText className="w-6 h-6" />,
       title: "Word to PDF",
       description: "Convert Word documents into PDF files for secure and consistent document sharing",
-      color: "bg-orange-100 text-orange-600"
+      color: "bg-orange-100 text-orange-600",
+      path: "convert-pdf/word-to-pdf"
     },
     {
       icon: <Image className="w-6 h-6" />,
       title: "PDF to JPG",
       description: "Convert PDF pages into JPG images that are easy to view, share, and use on any device",
-      color: "bg-blue-100 text-blue-600"
+      color: "bg-blue-100 text-blue-600",
+      path: "convert-pdf/pdf-to-jpg"
     },
     {
       icon: <Image className="w-6 h-6" />,
       title: "PDF to PNG",
       description: "Export PDF pages as high-quality PNG images with better clarity and transparency support",
-      color: "bg-blue-100 text-blue-600"
+      color: "bg-blue-100 text-blue-600",
+      path: "convert-pdf/pdf-to-png"
     }
   ];
 
@@ -148,9 +160,11 @@ export default function BentoPDFLanding() {
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
           {tools.map((tool, index) => (
-            <div
+            /* 3. Mengganti div dengan Link dan menambahkan href */
+            <Link
               key={index}
-              className="bg-white p-6 rounded-2xl shadow-sm hover:shadow-lg transition-all cursor-pointer group border border-gray-100"
+              href={tool.path}
+              className="block bg-white p-6 rounded-2xl shadow-sm hover:shadow-lg transition-all cursor-pointer group border border-gray-100"
             >
               {/* Icon dan Title dalam satu baris */}
               <div className="flex items-center gap-3 mb-3">
@@ -167,10 +181,9 @@ export default function BentoPDFLanding() {
               <p className="text-sm text-gray-600 leading-relaxed">
                 {tool.description}
               </p>
-            </div>
+            </Link>
           ))}
         </div>
-
 
         <div className="text-center">
           <button className="text-blue-600 hover:text-blue-700 font-semibold flex items-center mx-auto border-2 border-blue-600 px-6 py-3 rounded-3xl hover:bg-blue-50 transition-all">

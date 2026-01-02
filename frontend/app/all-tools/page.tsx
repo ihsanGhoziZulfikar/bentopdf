@@ -108,9 +108,9 @@ export default function BentoPDFTools() {
         <section className="mb-12">
           <h2 className="text-2xl font-bold text-gray-900 mb-6">Edit PDF</h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-6">
-            <ToolCard icon={Edit} title="PDF Editor" description="Modify, annotate, redact, comment, add shapes/images, reorder, and view PDFs." color="green" link="/tools/pdf-editor" />
-            <ToolCard icon={PenTool} title="Sign PDF" description="Add electronic signatures to PDF documents quickly and securely." color="green" link="/tools/sign-pdf" />
-            <ToolCard icon={Droplet} title="Watermark Tiling" description="Insert text or image watermarks to protect and brand your PDF files." color="green" link="/tools/watermark-pdf" />
+            <ToolCard icon={Edit} title="PDF Editor" description="Modify, annotate, redact, comment, add shapes/images, reorder, and view PDFs." color="green" link="/pdf-editor" />
+            <ToolCard icon={PenTool} title="Sign PDF" description="Add electronic signatures to PDF documents quickly and securely." color="green" link="/sign-pdf" />
+            <ToolCard icon={Droplet} title="Watermark Tiling" description="Insert text or image watermarks to protect and brand your PDF files." color="green" link="/watermark-tiling" />
           </div>
         </section>
 
@@ -118,8 +118,8 @@ export default function BentoPDFTools() {
         <section className="mb-12">
           <h2 className="text-2xl font-bold text-gray-900 mb-6">Security PDF</h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-6">
-            <ToolCard icon={Lock} title="Encrypt PDF" description="Protect PDF files with a password for secure and restricted access." color="blue" link="/tools/encrypt-pdf" />
-            <ToolCard icon={Unlock} title="Decrypt PDF" description="Remove password protection from PDF files when permitted." color="blue" link="/tools/decrypt-pdf" />
+            <ToolCard icon={Lock} title="Encrypt PDF" description="Protect PDF files with a password for secure and restricted access." color="blue" link="/encrypt-pdf" />
+            <ToolCard icon={Unlock} title="Decrypt PDF" description="Remove password protection from PDF files when permitted." color="blue" link="/decrypt-pdf" />
           </div>
         </section>
 
