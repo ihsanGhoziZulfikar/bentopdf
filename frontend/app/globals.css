@@ -14,7 +14,7 @@
 @import '@fontsource/merriweather/700.css';
 @import '@fontsource/merriweather/400-italic.css';
 @import '@fontsource/cedarville-cursive/400.css';
-@import 'cropperjs/dist/cropper.css';
+/* @import 'cropperjs/dist/cropper.css'; */
 @import 'tailwindcss';
 
 @theme {
