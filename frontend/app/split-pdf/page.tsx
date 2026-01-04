@@ -22,6 +22,7 @@ export default function SplitPdf() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -93,27 +94,74 @@ export default function SplitPdf() {
 
     setIsProcessing(true);
     setErrorMsg(null);
+    setDownloadUrl(null); // Reset URL sebelumnya
 
-    // Simulasi proses backend
-    setTimeout(() => {
-      setIsProcessing(false);
-      const isSuccess = true; // Demo always success
+    try {
+      // 1. Siapkan FormData (format multipart/form-data)
+      const formData = new FormData();
+      formData.append('file', selectedFile); // Key 'file' sesuai upload.single('file') di routes
 
-      if (isSuccess) {
-        setShowSuccessModal(true);
+      // Kirim parameter range.
+      // Backend Anda membaca req.body.range.
+      // Pastikan splitMode adalah 'range', atau Anda harus memproses logika lain di sini.
+      if (splitMode === 'range') {
+        formData.append('range', rangeInput);
       } else {
-        setShowErrorModal(true);
+        // TODO: Jika Anda ingin support mode lain (Ganjil/Genap),
+        // Anda harus mengonversi mode tersebut menjadi string range (misal "1,3,5")
+        // atau update backend untuk menerima parameter 'mode'.
+        // Untuk saat ini kita kirim rangeInput sebagai default.
+        formData.append('range', rangeInput);
       }
-    }, 2000);
+
+      // 2. Tembak API Backend
+      // Perhatikan URL-nya: port 5000 + prefix /api + route /split
+      const response = await fetch('http://localhost:5000/api/split', {
+        method: 'POST',
+        body: formData,
+      });
+
+      // 3. Ambil Hasil JSON
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result.details || result.error || 'Gagal memisahkan PDF'
+        );
+      }
+
+      // 4. Sukses
+      console.log('Success Split:', result);
+      setDownloadUrl(result.data.download_url); // Simpan URL untuk tombol download
+      setShowSuccessModal(true);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (err: any) {
+      console.error('Error splitting PDF:', err);
+      setErrorMsg(err.message || 'Terjadi kesalahan jaringan.');
+      setShowErrorModal(true);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleDownload = () => {
-    alert('Downloading Split PDF files (ZIP)...');
+    if (downloadUrl) {
+      // Membuat elemen anchor sementara untuk trigger download
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.setAttribute('download', ''); // Browser akan mencoba mendownload
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      alert('File belum siap didownload.');
+    }
   };
 
   const handleNext = () => {
     setShowSuccessModal(false);
     setSelectedFile(null);
+    setDownloadUrl(null); // <--- Reset URL di sini
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 

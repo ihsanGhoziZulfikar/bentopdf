@@ -12,6 +12,10 @@ import Image from 'next/image';
 import Navbar from '@/app/components/navbar';
 import ToolsFooter from '@/app/components/footer/tools-footer';
 
+// PERBAIKAN 1: Gunakan "import type" agar aman untuk SSR (Server Side Rendering)
+// Kita tidak mengimport logic-nya di sini, hanya definisi tipenya.
+import type { WebViewerInstance } from '@pdftron/webviewer';
+
 export default function WatermarkTiling() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
@@ -33,8 +37,47 @@ export default function WatermarkTiling() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // --- PDFTron Refs & State ---
+  const viewerDiv = useRef<HTMLDivElement>(null);
+  const [instance, setInstance] = useState<WebViewerInstance | null>(null);
 
-  // --- Logic Upload ---
+  // --- PERBAIKAN 2: Inisialisasi PDFTron dengan Dynamic Import ---
+  useEffect(() => {
+    // Pastikan kode hanya jalan di browser
+    if (typeof window !== 'undefined' && viewerDiv.current) {
+      
+      // Load library secara dinamis
+      import('@pdftron/webviewer').then((module) => {
+        const WebViewer = module.default; // Ambil default export
+
+        WebViewer(
+          {
+            path: '/webviewer/lib', // Pastikan folder public/webviewer/lib ada
+            licenseKey: 'YOUR_LICENSE_KEY_HERE', // Kosongkan jika trial
+            fullAPI: true, 
+          },
+          viewerDiv.current as HTMLDivElement
+        ).then((inst) => {
+          setInstance(inst);
+          
+          // Sembunyikan UI default
+          inst.UI.disableElements(['header', 'toolsHeader', 'sidebar', 'leftPanel']);
+          inst.UI.setTheme('light');
+        });
+      });
+    }
+  }, []);
+
+  // --- 2. Load File ke PDFTron saat File Dipilih ---
+  useEffect(() => {
+    if (selectedFile && instance) {
+      // Load file ke instance PDFTron
+      instance.UI.loadDocument(selectedFile, { filename: selectedFile.name });
+    }
+  }, [selectedFile, instance]);
+
+  // --- Logic Upload (UI Only) ---
   const handleFileSelection = (file: File) => {
     if (file.type !== 'application/pdf') {
       setErrorMsg('Please select a valid PDF file.');
@@ -94,18 +137,102 @@ export default function WatermarkTiling() {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+    if (instance) {
+      instance.UI.closeDocument();
+    }
   };
 
-  const handleProcess = () => {
+  const hexToRgb = (hex: string) => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result
+      ? {
+          r: parseInt(result[1], 16),
+          g: parseInt(result[2], 16),
+          b: parseInt(result[3], 16),
+        }
+      : { r: 0, g: 0, b: 0 };
+  };
+
+  // --- 3. Logic Process (Applying Tiled Watermark) ---
+  const handleProcess = async () => {
+    if (!instance) return;
     setIsProcessing(true);
-    setTimeout(() => {
+
+    const { documentViewer, annotationManager, Annotations } = instance.Core;
+    const doc = documentViewer.getDocument();
+
+    if (!doc) {
       setIsProcessing(false);
-      setShowSuccessModal(true);
-    }, 2000);
+      return;
+    }
+
+    try {
+      annotationManager.deleteAnnotations(annotationManager.getAnnotationsList());
+
+      const pageCount = doc.getPageCount();
+      const rgb = hexToRgb(color);
+      const pdfColor = new Annotations.Color(rgb.r, rgb.g, rgb.b);
+
+      for (let i = 1; i <= pageCount; i++) {
+        const pageInfo = doc.getPageInfo(i);
+        const pageWidth = pageInfo.width;
+        const pageHeight = pageInfo.height;
+
+        const textWidthEstimate = watermarkText.length * (fontSize * 0.6); 
+        const spacingX = textWidthEstimate + (gap * 50); 
+        const spacingY = fontSize + (gap * 50);
+
+        const annotationsToAdd = [];
+
+        for (let y = -pageHeight; y < pageHeight * 2; y += spacingY) {
+          for (let x = -pageWidth; x < pageWidth * 2; x += spacingX) {
+            
+            const txt = new Annotations.FreeTextAnnotation();
+            txt.PageNumber = i;
+            txt.X = x;
+            txt.Y = y;
+            txt.Width = textWidthEstimate * 2;
+            txt.Height = fontSize * 2;
+            txt.setContents(watermarkText);
+            txt.FontSize = `${fontSize}pt`;
+            txt.TextColor = pdfColor;
+            txt.Opacity = opacity;
+            txt.Rotation = angle;
+            
+            txt.FillColor = new Annotations.Color(0, 0, 0, 0);
+            txt.StrokeColor = new Annotations.Color(0, 0, 0, 0);
+            
+            txt.ReadOnly = true;
+            txt.Locked = true;
+
+            annotationsToAdd.push(txt);
+          }
+        }
+
+        annotationManager.addAnnotations(annotationsToAdd);
+      }
+
+      setTimeout(() => {
+        setIsProcessing(false);
+        setShowSuccessModal(true);
+      }, 1000);
+
+    } catch (error) {
+      console.error("Error applying watermark:", error);
+      setErrorMsg("Failed to process PDF.");
+      setIsProcessing(false);
+    }
   };
 
-  const handleDownload = () => {
-    alert('Downloading PDF with Tiled Watermark...');
+  // --- 4. Logic Download ---
+  const handleDownload = async () => {
+    if (!instance) return;
+    
+    await instance.UI.downloadPdf({
+      includeAnnotations: true,
+      flatten: true, 
+      filename: `watermarked-${selectedFile?.name || 'document.pdf'}`
+    });
   };
 
   const handleNext = () => {
@@ -138,14 +265,18 @@ export default function WatermarkTiling() {
           Back to Tools
         </Link>
 
+        {/* --- Hidden PDFTron Container --- */}
+        <div 
+          ref={viewerDiv} 
+          className="hidden" 
+          style={{ height: '0px', width: '0px', overflow: 'hidden' }}
+        ></div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8 items-start">
           {/* --- KOLOM KIRI (Upload & Preview) --- */}
           <div className="lg:col-span-2 order-1 lg:order-1 flex flex-col gap-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-              {/* LOGIC PERUBAHAN:
-                  Dropzone tetap dirender selama (!selectedFile).
-                  Di dalamnya, kita cek apakah (isUploading) atau tidak untuk menentukan kontennya.
-              */}
+              
               {!selectedFile && (
                 <div
                   onDragOver={handleDragOver}
@@ -161,10 +292,9 @@ export default function WatermarkTiling() {
                   }`}
                 >
                   {isUploading ? (
-                    // --- TAMPILAN SAAT LOADING (DI DALAM KOTAK) ---
+                    // --- TAMPILAN SAAT LOADING ---
                     <div className="w-full max-w-sm animate-in fade-in zoom-in duration-300">
                       <div className="flex justify-center mb-4">
-                        {/* Loading Icon Animasi */}
                         <div className="relative">
                           <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
                           <div className="absolute inset-0 flex items-center justify-center font-bold text-xs text-blue-600">
@@ -186,7 +316,7 @@ export default function WatermarkTiling() {
                       </p>
                     </div>
                   ) : (
-                    // --- TAMPILAN SAAT STANDBY (DI DALAM KOTAK) ---
+                    // --- TAMPILAN SAAT STANDBY ---
                     <div className="animate-in fade-in duration-300">
                       <div className="flex justify-center mb-4 sm:mb-6">
                         <div className="relative w-24 h-24 sm:w-32 sm:h-32">
@@ -225,7 +355,6 @@ export default function WatermarkTiling() {
                     </div>
                   )}
 
-                  {/* Hidden Input tetap ada */}
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -237,7 +366,7 @@ export default function WatermarkTiling() {
                 </div>
               )}
 
-              {/* State C: File Selected (Preview Watermark) */}
+              {/* State C: File Selected (Preview) */}
               {selectedFile && !isUploading && (
                 <div className="animate-in fade-in">
                   <div className="flex items-center justify-between mb-4">
@@ -253,7 +382,6 @@ export default function WatermarkTiling() {
                   </div>
 
                   <div className="relative w-full h-[600px] overflow-hidden bg-gray-100 border border-gray-300 rounded-lg flex items-center justify-center shadow-inner">
-                    {/* Background PDF Placeholder */}
                     <div className="bg-white w-[80%] h-[90%] shadow-lg p-8 relative overflow-hidden flex flex-col gap-4">
                       <div className="h-4 bg-gray-200 w-3/4 rounded"></div>
                       <div className="h-4 bg-gray-200 w-full rounded"></div>
@@ -263,24 +391,24 @@ export default function WatermarkTiling() {
                       <div className="h-4 bg-gray-200 w-full rounded mt-4"></div>
                       <div className="h-4 bg-gray-200 w-4/5 rounded"></div>
 
-                      {/* Watermark Overlay */}
                       <div
-                        className="absolute inset-0 pointer-events-none flex flex-wrap content-center justify-center overflow-hidden opacity-50 z-10"
+                        className="absolute inset-0 pointer-events-none flex flex-wrap content-center justify-center overflow-hidden z-10"
                         style={{
                           gap: `${gap}rem`,
-                          transform: `rotate(${angle}deg) scale(1.2)`,
+                          transform: `rotate(${angle}deg) scale(1.5)`,
+                          opacity: opacity,
                         }}
                       >
-                        {Array.from({ length: 40 }).map((_, i) => (
+                        {Array.from({ length: 60 }).map((_, i) => (
                           <div
                             key={i}
                             style={{
                               fontSize: `${fontSize / 2}px`,
                               color: color,
-                              opacity: opacity,
                               whiteSpace: 'nowrap',
                               fontWeight: 'bold',
                               userSelect: 'none',
+                              padding: '10px',
                             }}
                           >
                             {watermarkType === 'text'
@@ -293,7 +421,7 @@ export default function WatermarkTiling() {
                   </div>
 
                   <p className="mt-2 text-xs text-gray-500 text-center">
-                    *Preview is an approximation. Final result may vary.
+                    *Preview is an approximation. Final result will be processed on the actual PDF.
                   </p>
                 </div>
               )}
@@ -306,7 +434,7 @@ export default function WatermarkTiling() {
             </div>
           </div>
 
-          {/* --- KOLOM KANAN (Sticky Control Panel) --- */}
+          {/* --- KOLOM KANAN (Controls) --- */}
           <div className="lg:col-span-1 order-1 lg:order-2">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 sticky top-24 z-10">
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
@@ -372,7 +500,7 @@ export default function WatermarkTiling() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Font Size
+                        Font Size (pt)
                       </label>
                       <input
                         type="number"

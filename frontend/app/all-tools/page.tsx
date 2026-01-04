@@ -321,14 +321,14 @@ export default function BentoPDFTools() {
               title="Encrypt PDF"
               description="Protect PDF files with a password for secure and restricted access."
               color="blue"
-              link="/tools/encrypt-pdf"
+              link="/encrypt-pdf"
             />
             <ToolCard
               icon={Unlock}
               title="Decrypt PDF"
               description="Remove password protection from PDF files when permitted."
               color="blue"
-              link="/tools/decrypt-pdf"
+              link="/decrypt-pdf"
             />
           </div>
         </section>

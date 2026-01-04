@@ -1,51 +1,48 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, ChangeEvent, useEffect } from 'react';
 import Link from 'next/link';
+import Navbar from '@/app/components/navbar';
+import ToolsFooter from '../../components/footer/tools-footer';
 import {
-  ArrowLeft,
-  UploadCloud,
-  Menu,
-  X,
   Plus,
   Trash2,
-  FileText,
+  Settings,
   Type,
+  FileText,
   ChevronDown,
   Check,
-  Instagram,
-  Linkedin,
+  UploadCloud,
 } from 'lucide-react';
 
-// Daftar bahasa simulasi
+// Simulasi Daftar Bahasa
 const LANGUAGES = [
   'English (Default)',
+  'Indonesian',
   'Spanish',
   'French',
   'German',
-  'Indonesian',
   'Japanese',
   'Chinese',
   'Russian',
-  'Portuguese',
   'Arabic',
   'Hindi',
 ];
 
 export default function TextToPdf() {
   // --- STATE MANAGEMENT ---
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-
-  // Mode: 'upload' atau 'text'
   const [mode, setMode] = useState<'upload' | 'text'>('upload');
-
-  // Upload Mode State
-  const [files, setFiles] = useState<File[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Text Mode State
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [textContent, setTextContent] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [uploadingFiles, setUploadingFiles] = useState<
+    { name: string; size: number; progress: number }[]
+  >([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
 
   // Settings State
   const [settings, setSettings] = useState({
@@ -53,542 +50,434 @@ export default function TextToPdf() {
     fontSize: 12,
     pageSize: 'A4',
     orientation: 'portrait',
-    customWidth: 595,
-    customHeight: 842,
     textColor: '#000000',
   });
 
-  // Language Dropdown Logic
-  const [isLangOpen, setIsLangOpen] = useState(false);
-  const [langSearch, setLangSearch] = useState('');
-  const langDropdownRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- HANDLERS ---
 
-  // Handle click outside language dropdown
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        langDropdownRef.current &&
-        !langDropdownRef.current.contains(event.target as Node)
-      ) {
-        setIsLangOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const newFiles = Array.from(e.target.files);
-      const validFiles = newFiles.filter(
+      const txtFiles = newFiles.filter(
         (f) => f.type === 'text/plain' || f.name.endsWith('.txt')
       );
 
-      if (validFiles.length !== newFiles.length) {
-        alert('Only .txt files are allowed.');
+      if (txtFiles.length !== newFiles.length) {
+        setErrorMsg('Some files were skipped. Only .txt files are supported.');
+      } else {
+        setErrorMsg(null);
       }
-      setFiles((prev) => [...prev, ...validFiles]);
+
+      setIsUploading(true);
+      const uploadFiles = txtFiles.map((f) => ({
+        name: f.name,
+        size: f.size,
+        progress: 0,
+      }));
+      setUploadingFiles(uploadFiles);
+
+      // Simulasi Progress
+      txtFiles.forEach((file, index) => {
+        let progress = 0;
+        const interval = setInterval(() => {
+          progress += 10;
+          setUploadingFiles((prev) => {
+            const updated = [...prev];
+            if (updated[index]) updated[index].progress = progress;
+            return updated;
+          });
+          if (progress >= 100) {
+            clearInterval(interval);
+            if (index === txtFiles.length - 1) {
+              setTimeout(() => {
+                setIsUploading(false);
+                setSelectedFiles((prev) => [...prev, ...txtFiles]);
+                setUploadingFiles([]);
+              }, 200);
+            }
+          }
+        }, 100);
+      });
     }
   };
 
   const removeFile = (index: number) => {
-    setFiles(files.filter((_, i) => i !== index));
+    setSelectedFiles(selectedFiles.filter((_, i) => i !== index));
   };
 
-  const handleCreatePdf = () => {
-    // Validasi input
-    if (mode === 'upload' && files.length === 0) {
-      alert('Please upload at least one text file.');
+  const handleConvert = async () => {
+    if (mode === 'upload' && selectedFiles.length === 0) {
+      setErrorMsg('Please upload at least one .txt file.');
       return;
     }
     if (mode === 'text' && textContent.trim() === '') {
-      alert('Please enter some text.');
+      setErrorMsg('Please enter some text to convert.');
       return;
     }
 
     setIsProcessing(true);
+    setErrorMsg(null);
 
-    // Simulasi proses
+    // Simulasi Proses Konversi
     setTimeout(() => {
       setIsProcessing(false);
-      alert('PDF Created Successfully! (Simulation)');
-    }, 2000);
+      const isSuccess = Math.random() > 0.05; // 95% success rate
+
+      if (isSuccess) {
+        setDownloadUrl('#');
+        setShowSuccessModal(true);
+      } else {
+        setShowErrorModal(true);
+      }
+    }, 2500);
   };
 
-  // Filter Bahasa
-  const filteredLanguages = LANGUAGES.filter((lang) =>
-    lang.toLowerCase().includes(langSearch.toLowerCase())
-  );
-
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-200 antialiased font-sans flex flex-col">
-      {/* --- NAVIGATION --- */}
-      <nav className="bg-gray-800 border-b border-gray-700 sticky top-0 z-30">
-        <div className="container mx-auto px-4">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex-shrink-0 flex items-center cursor-pointer">
-              <img
-                src="/images/favicon.svg"
-                alt="Bento PDF Logo"
-                className="h-8 w-8"
-              />
-              <span className="text-white font-bold text-xl ml-2">
-                <Link href="/">BentoPDF</Link>
-              </span>
-            </div>
+    <div className="min-h-screen bg-gray-50">
+      <Navbar />
 
-            <div className="hidden md:flex items-center space-x-8 text-white">
-              <Link
-                href="/"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                Home
-              </Link>
-              <Link
-                href="/about"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                About
-              </Link>
-              <Link
-                href="/contact"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                Contact
-              </Link>
-              <Link
-                href="/tools"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                All Tools
-              </Link>
-            </div>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Link
+          href="/tools"
+          className="inline-flex items-center text-indigo-600 hover:text-indigo-700 mb-8 font-medium"
+        >
+          <svg
+            className="w-5 h-5 mr-1"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M15 19l-7-7 7-7"
+            />
+          </svg>
+          Back to Tools
+        </Link>
 
-            <div className="md:hidden flex items-center">
-              <button
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="text-gray-400 hover:text-white hover:bg-gray-700 p-2 rounded-md"
-              >
-                {!isMenuOpen ? (
-                  <Menu className="h-6 w-6" />
-                ) : (
-                  <X className="h-6 w-6" />
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {isMenuOpen && (
-          <div className="md:hidden bg-gray-800 border-t border-gray-700 p-2 space-y-1">
-            <Link
-              href="/"
-              className="block px-3 py-2 rounded-md text-white hover:bg-gray-700"
-            >
-              Home
-            </Link>
-            <Link
-              href="/about"
-              className="block px-3 py-2 rounded-md text-white hover:bg-gray-700"
-            >
-              About
-            </Link>
-            <Link
-              href="/contact"
-              className="block px-3 py-2 rounded-md text-white hover:bg-gray-700"
-            >
-              Contact
-            </Link>
-            <Link
-              href="/tools"
-              className="block px-3 py-2 rounded-md text-white hover:bg-gray-700"
-            >
-              All Tools
-            </Link>
-          </div>
-        )}
-      </nav>
-
-      {/* --- MAIN CONTENT --- */}
-      <div className="flex-grow flex items-start justify-center py-12 p-4 bg-gray-900">
-        <div className="bg-gray-800 rounded-xl shadow-xl px-4 py-8 md:p-8 max-w-2xl w-full text-gray-200 border border-gray-700">
-          <Link href="/tools">
-            <button className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 mb-6 font-semibold transition-colors">
-              <ArrowLeft className="w-5 h-5" />
-              <span>Back to Tools</span>
-            </button>
-          </Link>
-
-          <h1 className="text-2xl font-bold text-white mb-2">Text to PDF</h1>
-          <p className="text-gray-400 mb-6">
-            Upload one or more text files, or type/paste text below to convert
-            to PDF with custom formatting.
-          </p>
-
-          {/* --- MODE TOGGLE --- */}
-          <div className="flex gap-2 p-1 rounded-lg bg-gray-900 border border-gray-700 mb-6">
-            <button
-              onClick={() => setMode('upload')}
-              className={`flex-1 font-semibold py-2 rounded-md transition-colors flex justify-center items-center gap-2 ${
-                mode === 'upload'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-              }`}
-            >
-              <UploadCloud className="w-4 h-4" /> Upload Files
-            </button>
-            <button
-              onClick={() => setMode('text')}
-              className={`flex-1 font-semibold py-2 rounded-md transition-colors flex justify-center items-center gap-2 ${
-                mode === 'text'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-              }`}
-            >
-              <Type className="w-4 h-4" /> Type Text
-            </button>
-          </div>
-
-          {/* --- UPLOAD PANEL --- */}
-          {mode === 'upload' && (
-            <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="relative flex flex-col items-center justify-center w-full h-48 md:h-64 border-2 border-dashed border-gray-600 rounded-xl cursor-pointer bg-gray-900 hover:bg-gray-700 transition-colors duration-300 group"
-              >
-                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <UploadCloud className="w-10 h-10 mb-3 text-gray-400 group-hover:text-indigo-400 transition-colors" />
-                  <p className="mb-2 text-sm text-gray-400">
-                    <span className="font-semibold text-gray-300">
-                      Click to select files
-                    </span>{' '}
-                    or drag and drop
-                  </p>
-                  <p className="text-xs text-gray-500">Text files (.txt)</p>
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  multiple
-                  accept="text/plain,.txt"
-                  onChange={handleFileChange}
-                />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* LEFT COLUMN: Input Area */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+              {/* Tabs Mode */}
+              <div className="flex border-b border-gray-100">
+                <button
+                  onClick={() => setMode('upload')}
+                  className={`flex-1 py-4 text-sm font-semibold flex justify-center items-center gap-2 transition-colors ${mode === 'upload' ? 'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500 hover:bg-gray-50'}`}
+                >
+                  <UploadCloud className="w-4 h-4" /> Upload Files
+                </button>
+                <button
+                  onClick={() => setMode('text')}
+                  className={`flex-1 py-4 text-sm font-semibold flex justify-center items-center gap-2 transition-colors ${mode === 'text' ? 'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500 hover:bg-gray-50'}`}
+                >
+                  <Type className="w-4 h-4" /> Type Text
+                </button>
               </div>
 
-              {/* File List */}
-              {files.length > 0 && (
-                <div className="mt-4 space-y-3">
-                  <div className="flex gap-3 mb-2">
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded flex items-center gap-1"
-                    >
-                      <Plus className="w-3 h-3" /> Add More
-                    </button>
-                    <button
-                      onClick={() => setFiles([])}
-                      className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded flex items-center gap-1"
-                    >
-                      <X className="w-3 h-3" /> Clear All
-                    </button>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-2">
-                    {files.map((file, idx) => (
-                      <div
-                        key={idx}
-                        className="flex justify-between items-center bg-gray-900 p-3 rounded border border-gray-600"
-                      >
-                        <div className="flex items-center gap-3 overflow-hidden">
-                          <FileText className="w-5 h-5 text-indigo-400 flex-shrink-0" />
-                          <span className="text-sm text-gray-200 truncate">
-                            {file.name}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => removeFile(idx)}
-                          className="text-gray-500 hover:text-red-400"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+              <div className="p-6">
+                {mode === 'upload' ? (
+                  /* Upload UI */
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed border-indigo-200 rounded-xl p-12 text-center bg-indigo-50/30 hover:bg-indigo-50/50 transition-colors cursor-pointer group"
+                  >
+                    <div className="flex justify-center mb-4">
+                      <div className="p-4 bg-white rounded-full shadow-sm group-hover:scale-110 transition-transform">
+                        <FileText className="w-10 h-10 text-indigo-500" />
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* --- TEXT INPUT PANEL --- */}
-          {mode === 'text' && (
-            <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-              <textarea
-                rows={12}
-                className="w-full bg-gray-900 border border-gray-600 text-gray-300 rounded-lg p-3 font-sans focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none resize-y"
-                placeholder="Start typing or paste your text here..."
-                value={textContent}
-                onChange={(e) => setTextContent(e.target.value)}
-              ></textarea>
-            </div>
-          )}
-
-          {/* --- FORMATTING OPTIONS --- */}
-          <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
-            {/* Language Selector */}
-            <div className="relative" ref={langDropdownRef}>
-              <label className="block mb-2 text-sm font-medium text-gray-300">
-                Select Language
-              </label>
-              <button
-                onClick={() => setIsLangOpen(!isLangOpen)}
-                className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-2.5 text-left flex justify-between items-center text-sm"
-              >
-                <span className="truncate">{settings.language}</span>
-                <ChevronDown className="w-4 h-4" />
-              </button>
-
-              {isLangOpen && (
-                <div className="absolute z-10 w-full bg-gray-800 border border-gray-600 rounded-lg mt-1 max-h-60 overflow-hidden shadow-xl flex flex-col">
-                  <div className="p-2 border-b border-gray-700 bg-gray-800 sticky top-0">
+                    </div>
+                    <p className="text-gray-700 text-lg font-medium mb-1">
+                      Drag and drop .txt files here
+                    </p>
+                    <p className="text-gray-500 text-sm mb-6">
+                      Max file size 10MB
+                    </p>
+                    <span className="px-6 py-2.5 bg-indigo-600 text-white rounded-full text-sm font-semibold shadow-md hover:bg-indigo-700 transition-colors">
+                      Browse Files
+                    </span>
                     <input
-                      type="text"
-                      className="w-full bg-gray-700 border border-gray-600 text-white rounded px-2 py-1 text-sm focus:outline-none focus:border-indigo-500"
-                      placeholder="Search..."
-                      value={langSearch}
-                      onChange={(e) => setLangSearch(e.target.value)}
-                      autoFocus
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept=".txt"
+                      onChange={handleFileChange}
+                      className="hidden"
                     />
                   </div>
-                  <div className="overflow-y-auto flex-1 p-1">
-                    {filteredLanguages.map((lang) => (
-                      <div
-                        key={lang}
-                        onClick={() => {
-                          setSettings({ ...settings, language: lang });
-                          setIsLangOpen(false);
-                          setLangSearch('');
-                        }}
-                        className="px-3 py-2 hover:bg-gray-700 cursor-pointer text-sm text-gray-300 rounded flex justify-between items-center"
-                      >
-                        {lang}
-                        {settings.language === lang && (
-                          <Check className="w-3 h-3 text-indigo-400" />
-                        )}
-                      </div>
-                    ))}
-                    {filteredLanguages.length === 0 && (
-                      <div className="px-3 py-2 text-gray-500 text-sm">
-                        No language found
-                      </div>
-                    )}
+                ) : (
+                  /* Text Editor UI */
+                  <textarea
+                    value={textContent}
+                    onChange={(e) => setTextContent(e.target.value)}
+                    placeholder="Start typing or paste your content here..."
+                    className="w-full h-80 p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none resize-none text-gray-700"
+                  />
+                )}
+
+                {errorMsg && (
+                  <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-sm flex items-center gap-2">
+                    <svg
+                      className="w-4 h-4"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                    {errorMsg}
                   </div>
-                </div>
-              )}
-            </div>
+                )}
 
-            {/* Font Size */}
-            <div>
-              <label className="block mb-2 text-sm font-medium text-gray-300">
-                Font Size
-              </label>
-              <input
-                type="number"
-                value={settings.fontSize}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    fontSize: parseInt(e.target.value) || 12,
-                  })
-                }
-                className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-2.5 text-sm focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-
-            {/* Page Size */}
-            <div>
-              <label className="block mb-2 text-sm font-medium text-gray-300">
-                Page Size
-              </label>
-              <select
-                value={settings.pageSize}
-                onChange={(e) =>
-                  setSettings({ ...settings, pageSize: e.target.value })
-                }
-                className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-2.5 text-sm focus:ring-indigo-500 focus:border-indigo-500"
-              >
-                <optgroup label="ISO A Series">
-                  <option value="A4">A4 (210 x 297 mm)</option>
-                  <option value="A3">A3 (297 x 420 mm)</option>
-                  <option value="A5">A5 (148 x 210 mm)</option>
-                </optgroup>
-                <optgroup label="North American">
-                  <option value="Letter">Letter (8.5 x 11 in)</option>
-                  <option value="Legal">Legal (8.5 x 14 in)</option>
-                </optgroup>
-                <option value="Custom">Custom Size</option>
-              </select>
-            </div>
-
-            {/* Orientation */}
-            <div>
-              <label className="block mb-2 text-sm font-medium text-gray-300">
-                Orientation
-              </label>
-              <select
-                value={settings.orientation}
-                onChange={(e) =>
-                  setSettings({ ...settings, orientation: e.target.value })
-                }
-                className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-2.5 text-sm focus:ring-indigo-500 focus:border-indigo-500"
-              >
-                <option value="portrait">Portrait</option>
-                <option value="landscape">Landscape</option>
-              </select>
-            </div>
-
-            {/* Custom Size Inputs (Conditional) */}
-            {settings.pageSize === 'Custom' && (
-              <div className="col-span-2 grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-1">
-                <div>
-                  <label className="block mb-2 text-sm font-medium text-gray-300">
-                    Width (pt)
-                  </label>
-                  <input
-                    type="number"
-                    value={settings.customWidth}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        customWidth: parseInt(e.target.value) || 0,
-                      })
-                    }
-                    className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-2.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block mb-2 text-sm font-medium text-gray-300">
-                    Height (pt)
-                  </label>
-                  <input
-                    type="number"
-                    value={settings.customHeight}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        customHeight: parseInt(e.target.value) || 0,
-                      })
-                    }
-                    className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-2.5 text-sm"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Text Color */}
-            <div>
-              <label className="block mb-2 text-sm font-medium text-gray-300">
-                Text Color
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={settings.textColor}
-                  onChange={(e) =>
-                    setSettings({ ...settings, textColor: e.target.value })
-                  }
-                  className="w-full h-[42px] bg-gray-700 border border-gray-600 rounded-lg p-1 cursor-pointer"
-                />
+                {/* File List Progress */}
+                {(isUploading || selectedFiles.length > 0) &&
+                  mode === 'upload' && (
+                    <div className="mt-8">
+                      <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">
+                        Selected Files
+                      </h3>
+                      <div className="space-y-3">
+                        {/* Uploading Status */}
+                        {uploadingFiles.map((file, i) => (
+                          <div
+                            key={i}
+                            className="p-4 bg-gray-50 rounded-xl border border-gray-200"
+                          >
+                            <div className="flex justify-between mb-2 text-sm">
+                              <span className="font-medium text-gray-700 truncate max-w-[200px]">
+                                {file.name}
+                              </span>
+                              <span className="text-indigo-600 font-bold">
+                                {file.progress}%
+                              </span>
+                            </div>
+                            <div className="w-full bg-gray-200 h-1.5 rounded-full overflow-hidden">
+                              <div
+                                className="bg-indigo-600 h-full transition-all duration-300"
+                                style={{ width: `${file.progress}%` }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                        {/* Completed Files */}
+                        {!isUploading &&
+                          selectedFiles.map((file, i) => (
+                            <div
+                              key={i}
+                              className="flex items-center justify-between p-4 bg-white rounded-xl border border-gray-100 shadow-sm"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
+                                  <FileText className="w-5 h-5" />
+                                </div>
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-800 truncate max-w-[150px]">
+                                    {file.name}
+                                  </p>
+                                  <p className="text-xs text-gray-400">
+                                    {(file.size / 1024).toFixed(1)} KB
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => removeFile(i)}
+                                className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
               </div>
             </div>
           </div>
 
-          {/* --- PROCESS BUTTON --- */}
-          <button
-            onClick={handleCreatePdf}
-            className="w-full mt-8 py-3 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold rounded-lg transition-all shadow-lg flex justify-center items-center gap-2"
-          >
-            Create PDF
-          </button>
-        </div>
-      </div>
+          {/* RIGHT COLUMN: Settings */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sticky top-24">
+              <div className="flex items-center gap-2 mb-6 text-gray-800">
+                <Settings className="w-5 h-5 text-indigo-600" />
+                <h2 className="font-bold text-lg">PDF Settings</h2>
+              </div>
 
-      {/* --- LOADER MODAL --- */}
+              <div className="space-y-5">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-2">
+                    Language
+                  </label>
+                  <select
+                    value={settings.language}
+                    onChange={(e) =>
+                      setSettings({ ...settings, language: e.target.value })
+                    }
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    {LANGUAGES.map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">
+                      Font Size
+                    </label>
+                    <input
+                      type="number"
+                      value={settings.fontSize}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          fontSize: parseInt(e.target.value),
+                        })
+                      }
+                      className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">
+                      Text Color
+                    </label>
+                    <div className="flex items-center p-1.5 bg-gray-50 border border-gray-200 rounded-xl">
+                      <input
+                        type="color"
+                        value={settings.textColor}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            textColor: e.target.value,
+                          })
+                        }
+                        className="w-full h-8 cursor-pointer rounded-lg overflow-hidden border-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-2">
+                    Page Layout
+                  </label>
+                  <select
+                    value={settings.pageSize}
+                    onChange={(e) =>
+                      setSettings({ ...settings, pageSize: e.target.value })
+                    }
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none"
+                  >
+                    <option value="A4">A4 Standard</option>
+                    <option value="Letter">Letter</option>
+                    <option value="A5">A5 Small</option>
+                  </select>
+                </div>
+
+                <button
+                  onClick={handleConvert}
+                  disabled={isProcessing}
+                  className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
+                >
+                  {isProcessing ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Converting...
+                    </>
+                  ) : (
+                    'Create PDF Now'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <ToolsFooter />
+
+      {/* --- MODALS (Success/Error/Loading) --- */}
       {isProcessing && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 p-8 rounded-xl flex flex-col items-center gap-4 border border-gray-700 shadow-2xl">
-            <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-white text-lg font-medium animate-pulse">
-              Processing...
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+            <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-6" />
+            <h3 className="text-xl font-bold text-gray-900 mb-2">
+              Converting Text
+            </h3>
+            <p className="text-gray-500">
+              Generating your professional PDF document...
             </p>
           </div>
         </div>
       )}
 
-      {/* --- FOOTER --- */}
-      <footer className="mt-auto border-t-2 border-gray-700 py-8 bg-gray-900">
-        <div className="container mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 text-center md:text-left">
-            <div className="mb-8 md:mb-0">
-              <div className="flex items-center justify-center md:justify-start mb-4">
-                <img
-                  src="/images/favicon.svg"
-                  alt="Bento PDF Logo"
-                  className="h-10 w-10 mr-3"
-                />
-                <span className="text-xl font-bold text-white">BentoPDF</span>
-              </div>
-              <p className="text-gray-400 text-sm">
-                &copy; 2025 BentoPDF. All rights reserved.
-              </p>
-              <p className="text-gray-500 text-xs mt-2">Version 1.0.0</p>
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl animate-in zoom-in duration-300">
+            <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Check className="w-10 h-10" />
             </div>
-            {/* Links Sections... (Simplified for brevity, same as previous files) */}
-            <div>
-              <h3 className="font-bold text-white mb-4">Company</h3>
-              <ul className="space-y-2 text-gray-400">
-                <li>
-                  <Link href="/about" className="hover:text-indigo-400">
-                    About Us
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/contact" className="hover:text-indigo-400">
-                    Contact Us
-                  </Link>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-bold text-white mb-4">Legal</h3>
-              <ul className="space-y-2 text-gray-400">
-                <li>
-                  <Link href="/terms" className="hover:text-indigo-400">
-                    Terms
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/privacy" className="hover:text-indigo-400">
-                    Privacy
-                  </Link>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-bold text-white mb-4">Follow Us</h3>
-              <div className="flex justify-center md:justify-start space-x-4 text-gray-400">
-                <a href="#" className="hover:text-indigo-400">
-                  <Instagram className="w-6 h-6" />
-                </a>
-                <a href="#" className="hover:text-indigo-400">
-                  <Linkedin className="w-6 h-6" />
-                </a>
-              </div>
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">
+              Ready to Download!
+            </h3>
+            <p className="text-gray-500 mb-8">
+              Your text has been successfully converted to PDF format.
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  alert('Downloading...');
+                }}
+                className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors"
+              >
+                Download PDF
+              </button>
+              <button
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  setSelectedFiles([]);
+                  setTextContent('');
+                }}
+                className="w-full py-3 bg-gray-100 text-gray-600 rounded-xl font-bold hover:bg-gray-200 transition-colors"
+              >
+                Convert Another
+              </button>
             </div>
           </div>
         </div>
-      </footer>
+      )}
+
+      {showErrorModal && (
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+            <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
+              <span className="text-4xl font-bold">!</span>
+            </div>
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">
+              Conversion Failed
+            </h3>
+            <p className="text-gray-500 mb-8">
+              Something went wrong. Please check your file or try again.
+            </p>
+            <button
+              onClick={() => setShowErrorModal(false)}
+              className="w-full py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

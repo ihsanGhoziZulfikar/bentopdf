@@ -11,6 +11,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import Navbar from '@/app/components/navbar';
 import ToolsFooter from '@/app/components/footer/tools-footer';
+import { WebViewerInstance } from '@pdftron/webviewer';
 
 export default function SignPdf() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -23,9 +24,11 @@ export default function SignPdf() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [signedPdfUrl, setSignedPdfUrl] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const editorRef = useRef<HTMLDivElement>(null); // Ref untuk auto-scroll
+  const viewerDiv = useRef<HTMLDivElement>(null); // Ref untuk Container PDFTron
+  const instanceRef = useRef<WebViewerInstance | null>(null); // Ref untuk Instance PDFTron
 
   // --- Logic Upload & Validasi ---
   const handleFileSelection = (file: File) => {
@@ -54,11 +57,55 @@ export default function SignPdf() {
     }, 100);
   };
 
+  // --- Inisialisasi PDFTron WebViewer ---
+  useEffect(() => {
+    // Hanya inisialisasi jika file sudah dipilih dan div container sudah ada
+    if (selectedFile && viewerDiv.current && !instanceRef.current) {
+      // Import WebViewer secara dinamis agar aman di Next.js (SSR)
+      import('@pdftron/webviewer').then((pdftron) => {
+        const fileUrl = URL.createObjectURL(selectedFile);
+        pdftron
+          .default(
+            {
+              path: '/webviewer/lib', // Pastikan folder ini ada di public/webviewer/lib
+              licenseKey: 'YOUR_LICENSE_KEY_OR_LEAVE_EMPTY_FOR_DEMO', // Masukkan key jika ada, kosongkan untuk demo (watermark)
+              initialDoc: fileUrl, // Load file langsung saat init
+              // Opsi tambahan untuk mengoptimalkan UI tanda tangan
+              disabledElements: [
+                'header', // Opsi: sembunyikan header default jika ingin tampilan bersih
+                'toolsHeader',
+              ],
+              // Kita bisa enable fitur spesifik
+              fullAPI: true,
+            },
+            viewerDiv.current as HTMLDivElement
+          )
+          .then((instance) => {
+            instanceRef.current = instance;
+
+            const { documentViewer, annotationManager } = instance.Core;
+
+            // Aktifkan mode dark/light sesuai UI Anda jika perlu
+            // instance.UI.setTheme('light');
+
+            // Menyiapkan tool Signature secara default atau UI yang relevan
+            instance.UI.enableFeatures([instance.UI.Feature.FilePicker]);
+
+            // Memastikan tombol save bawaan PDFTron tidak membingungkan user (karena kita punya tombol save sendiri)
+            instance.UI.disableElements(['saveButton', 'downloadButton']);
+          });
+      });
+    } else if (selectedFile && instanceRef.current) {
+      // Jika instance sudah ada, cukup load dokumen baru
+      instanceRef.current.UI.loadDocument(selectedFile);
+    }
+  }, [selectedFile]);
+
   // Efek Auto-scroll saat file dipilih
   useEffect(() => {
-    if (selectedFile && editorRef.current) {
+    if (selectedFile && viewerDiv.current) {
       setTimeout(() => {
-        editorRef.current?.scrollIntoView({
+        viewerDiv.current?.scrollIntoView({
           behavior: 'smooth',
           block: 'start',
         });
@@ -94,22 +141,67 @@ export default function SignPdf() {
   // --- Manage File ---
   const removeFile = () => {
     setSelectedFile(null);
+    setSignedPdfUrl(null);
+    // Reset instance atau unload document jika perlu
+    if (instanceRef.current) {
+      instanceRef.current.UI.closeDocument();
+    }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
-  // --- Logic Save (Simulasi) ---
-  const handleSave = () => {
+  // --- Logic Save Real (Menggunakan PDFTron) ---
+  const handleSave = async () => {
+    if (!instanceRef.current) return;
+
     setIsProcessing(true);
-    setTimeout(() => {
+
+    try {
+      const { documentViewer, annotationManager } = instanceRef.current.Core;
+      const doc = documentViewer.getDocument();
+
+      // Ambil XFDF (data anotasi/tanda tangan)
+      const xfdfString = await annotationManager.exportAnnotations();
+
+      // Opsi penyimpanan
+      const saveOptions = {
+        xfdfString,
+        flatten: flatten, // Menggunakan state flatten dari UI Anda
+        downloadType: 'pdf',
+      };
+
+      // Dapatkan data file sebagai Uint8Array
+      const data = await doc.getFileData(saveOptions);
+
+      // Buat Blob
+      const blob = new Blob([data], { type: 'application/pdf' });
+
+      // Buat URL untuk download
+      const url = URL.createObjectURL(blob);
+      setSignedPdfUrl(url);
+
+      // Simulasi delay UX sedikit
+      setTimeout(() => {
+        setIsProcessing(false);
+        setShowSuccessModal(true);
+      }, 1000);
+    } catch (error) {
+      console.error('Error saving document:', error);
+      setErrorMsg('Failed to process document.');
       setIsProcessing(false);
-      setShowSuccessModal(true);
-    }, 2000);
+    }
   };
 
   const handleDownload = () => {
-    alert('Downloading signed PDF...');
+    if (signedPdfUrl) {
+      const link = document.createElement('a');
+      link.href = signedPdfUrl;
+      link.download = `signed_${selectedFile?.name || 'document.pdf'}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   const handleNext = () => {
@@ -143,13 +235,13 @@ export default function SignPdf() {
           Back to Tools
         </Link>
 
-        {/* Layout Grid 2 Kolom (Kiri: Main Content, Kanan: Sidebar) */}
+        {/* Layout Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8 items-start">
           {/* --- KOLOM KIRI (Main Area) --- */}
           <div className="lg:col-span-2 order-1 lg:order-1 flex flex-col gap-6">
             {/* 1. SECTION UPLOAD / FILE INFO */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-              {/* State A: Belum ada file (Tampilkan Dropzone Besar) */}
+              {/* State A: Dropzone */}
               {!selectedFile && !isUploading && (
                 <div
                   onDragOver={handleDragOver}
@@ -163,6 +255,7 @@ export default function SignPdf() {
                 >
                   <div className="flex justify-center mb-4 sm:mb-6">
                     <div className="relative w-24 h-24 sm:w-32 sm:h-32">
+                      {/* Pastikan path image ini benar di project Anda */}
                       <img
                         src="/asset/images/upload.svg"
                         alt="upload"
@@ -199,13 +292,10 @@ export default function SignPdf() {
                       className="hidden"
                     />
                   </label>
-                  <div className="mt-4 sm:mt-6 text-xs sm:text-sm text-blue-600 px-2">
-                    Supported formats: PDF
-                  </div>
                 </div>
               )}
 
-              {/* State B: Sedang Upload */}
+              {/* State B: Uploading */}
               {isUploading && (
                 <div className="space-y-3">
                   <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -227,7 +317,7 @@ export default function SignPdf() {
                 </div>
               )}
 
-              {/* State C: File Terpilih (Tampilkan Card Ringkas) */}
+              {/* State C: File Info Card */}
               {selectedFile && !isUploading && (
                 <div className="animate-in fade-in">
                   <div className="flex items-center justify-between mb-3">
@@ -277,12 +367,9 @@ export default function SignPdf() {
               )}
             </div>
 
-            {/* 2. SECTION EDITOR (MUNCUL DI BAWAH UPLOAD) */}
+            {/* 2. SECTION EDITOR (PDFTRON) */}
             {selectedFile && !isUploading && (
-              <div
-                ref={editorRef}
-                className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 animate-in slide-in-from-bottom-4 fade-in duration-500"
-              >
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 animate-in slide-in-from-bottom-4 fade-in duration-500">
                 <div className="flex items-center justify-between mb-4 border-b border-gray-100 pb-4">
                   <h3 className="text-lg font-bold text-gray-900">
                     Sign Document
@@ -294,33 +381,12 @@ export default function SignPdf() {
                   </div>
                 </div>
 
-                {/* PDF Editor Canvas Container */}
-                <div className="relative w-full h-[70vh] overflow-auto bg-gray-100 border border-gray-300 rounded-lg flex items-center justify-center shadow-inner">
-                  <div className="text-center p-8">
-                    <div className="mb-4 inline-block p-4 bg-white rounded-full shadow-sm">
-                      <svg
-                        className="w-12 h-12 text-gray-400"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth="2"
-                          d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                        />
-                      </svg>
-                    </div>
-                    <h4 className="text-lg font-medium text-gray-900">
-                      PDF Editor Placeholder
-                    </h4>
-                    <p className="text-gray-500 mt-2 max-w-md mx-auto text-sm">
-                      Implement your <strong>PDF.js</strong> or{' '}
-                      <strong>React-PDF</strong> logic here. Canvas overlay for
-                      drawing signatures goes on top of the PDF layer.
-                    </p>
-                  </div>
+                {/* PDFTron Viewer Container */}
+                <div className="relative w-full h-[75vh] bg-gray-100 border border-gray-300 rounded-lg overflow-hidden shadow-inner">
+                  <div
+                    className="webviewer h-full w-full"
+                    ref={viewerDiv}
+                  ></div>
                 </div>
 
                 {/* Editor Controls Footer */}
@@ -335,7 +401,7 @@ export default function SignPdf() {
                     <span>
                       Flatten PDF{' '}
                       <span className="text-xs text-gray-500 font-normal">
-                        (Prevents editing)
+                        (Prevents further editing)
                       </span>
                     </span>
                   </label>
@@ -410,16 +476,18 @@ export default function SignPdf() {
                 </h3>
                 <ol className="list-decimal list-inside text-sm text-blue-700 space-y-2">
                   <li>Upload your PDF file.</li>
-                  <li>The editor will appear below.</li>
+                  <li>
+                    Use the <strong>Signature Tool</strong> in the toolbar.
+                  </li>
                   <li>Draw or type your signature.</li>
-                  <li>Click "Save & Download".</li>
+                  <li>Click "Save & Download" below the editor.</li>
                 </ol>
               </div>
 
               <div className="text-xs text-gray-500 pt-4 border-t border-gray-100">
                 <p>
-                  Your files are processed locally in your browser for maximum
-                  privacy.
+                  Powered by PDFTron. Files are processed locally in your
+                  browser for maximum privacy.
                 </p>
               </div>
             </div>

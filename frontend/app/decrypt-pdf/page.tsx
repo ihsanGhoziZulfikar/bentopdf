@@ -7,39 +7,42 @@ import ToolsFooter from '../components/footer/tools-footer';
 import {
   CircleArrowUp,
   FileText,
-  Wrench,
+  Unlock,
+  Key,
   AlertCircle,
-  CheckCircle, // Digunakan untuk icon sukses
-  Download, // Icon download
+  CheckCircle,
+  Eye,
+  EyeOff,
+  ShieldAlert,
 } from 'lucide-react';
 
-// Tipe data untuk file yang sedang diupload (Simulasi UI)
+// Tipe data untuk file
 interface UploadingFile {
   file: File;
   progress: number;
   id: string;
 }
 
-export default function RepairPDF() {
+export default function DecryptPDF() {
   // --- STATE ---
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
-  const [isRepairing, setIsRepairing] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  // State khusus untuk menangani jika gambar error/tidak ketemu
+  // State khusus Decrypt
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  // State Image Fallback
   const [imageError, setImageError] = useState(false);
 
-  // --- LOGIC SIMULASI UPLOAD (UI ONLY) ---
+  // --- LOGIC SIMULASI UPLOAD ---
   const simulateUpload = (file: File) => {
     const fileId = `${file.name}-${Date.now()}`;
-    const newUploadingFile: UploadingFile = {
-      file,
-      progress: 0,
-      id: fileId,
-    };
+    const newUploadingFile: UploadingFile = { file, progress: 0, id: fileId };
 
     setUploadingFiles((prev) => [...prev, newUploadingFile]);
 
@@ -47,7 +50,7 @@ export default function RepairPDF() {
       setUploadingFiles((prev) => {
         const updated = prev.map((uf) => {
           if (uf.id === fileId) {
-            const newProgress = Math.min(uf.progress + 15, 100);
+            const newProgress = Math.min(uf.progress + 20, 100);
             return { ...uf, progress: newProgress };
           }
           return uf;
@@ -60,29 +63,27 @@ export default function RepairPDF() {
         if (completedFile) {
           clearInterval(interval);
           setTimeout(() => {
-            // Repair mode: Hanya ambil 1 file terakhir
             setSelectedFiles([completedFile.file]);
             setUploadingFiles((current) =>
               current.filter((uf) => uf.id !== fileId)
             );
-            setDownloadUrl(null); // Reset download url jika upload file baru
-            setErrorMsg(null); // Reset error lama
+            setDownloadUrl(null);
+            setErrorMsg(null);
           }, 400);
         }
-
         return updated;
       });
     }, 100);
   };
 
-  // --- HANDLERS (Drag & Drop) ---
+  // --- HANDLERS ---
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      if (file.type === 'application/pdf' && file.size <= 50 * 1024 * 1024) {
+      if (file.type === 'application/pdf') {
         simulateUpload(file);
       } else {
-        setErrorMsg('Please select a valid PDF file under 50MB.');
+        setErrorMsg('Please select a valid PDF file.');
       }
     }
     e.target.value = '';
@@ -92,7 +93,6 @@ export default function RepairPDF() {
     e.preventDefault();
     setIsDragging(true);
   };
-
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
@@ -103,9 +103,7 @@ export default function RepairPDF() {
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      if (file.type === 'application/pdf' && file.size <= 50 * 1024 * 1024) {
-        simulateUpload(file);
-      }
+      if (file.type === 'application/pdf') simulateUpload(file);
     }
   };
 
@@ -113,60 +111,64 @@ export default function RepairPDF() {
     setSelectedFiles([]);
     setDownloadUrl(null);
     setErrorMsg(null);
+    setPassword('');
   };
 
-  // --- FUNGSI REPAIR KE BACKEND (FIXED) ---
-  const handleRepair = async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    e.stopPropagation(); // Stop event bubbling
+  // --- BACKEND LOGIC ---
+  const handleDecrypt = async () => {
+    if (selectedFiles.length === 0 || !password) return;
 
-    if (selectedFiles.length === 0) return;
-
-    setIsRepairing(true);
+    setIsProcessing(true);
     setErrorMsg(null);
-    setDownloadUrl(null);
-
-    const fileToRepair = selectedFiles[0];
-    const formData = new FormData();
-    formData.append('file', fileToRepair);
+    const fileToDecrypt = selectedFiles[0];
 
     try {
-      console.log('Starting fetch request...'); // Debug log di browser console
+      const formData = new FormData();
+      // Kirim password untuk membuka file
+      formData.append('password', password);
+      // Kirim file
+      formData.append('file', fileToDecrypt);
 
-      const response = await fetch('http://localhost:5000/api/repair', {
+      // Endpoint backend (Sesuaikan dengan backend Anda)
+      const response = await fetch('http://localhost:5000/api/pdf/decrypt', {
         method: 'POST',
         body: formData,
-        mode: 'cors', // <--- TAMBAHKAN INI
-        // headers: TIDAK BOLEH ADA HEADER CONTENT-TYPE
       });
 
-      console.log('Response status:', response.status); // Cek status di console
-
       if (!response.ok) {
-        throw new Error(
-          `Server returned ${response.status} ${response.statusText}`
-        );
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.indexOf('application/json') !== -1) {
+          const errorData = await response.json();
+          // Pesan error umum jika password salah
+          throw new Error(
+            errorData.message || 'Incorrect password or failed to unlock.'
+          );
+        } else {
+          throw new Error('Server error occurred.');
+        }
       }
 
       const blob = await response.blob();
-      console.log('Blob received size:', blob.size); // Cek ukuran file
-
-      if (blob.size === 0) {
-        throw new Error('Received empty file from server');
-      }
-
       const pdfUrl = window.URL.createObjectURL(blob);
       setDownloadUrl(pdfUrl);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      console.error('Full Error Details:', error);
-      setErrorMsg(error.message || 'Connection failed');
+
+      // Auto download
+      const link = document.createElement('a');
+      link.href = pdfUrl;
+      link.download = `unlocked_${fileToDecrypt.name}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error(error);
+      setErrorMsg(
+        error instanceof Error ? error.message : 'An unknown error occurred'
+      );
     } finally {
-      setIsRepairing(false);
+      setIsProcessing(false);
     }
   };
 
-  // Helper format size
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -180,10 +182,10 @@ export default function RepairPDF() {
       <Navbar />
 
       <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
-        {/* Breadcrumb Back */}
+        {/* Breadcrumb */}
         <Link
           href="/"
-          className="inline-flex items-center text-gray-500 hover:text-blue-600 mb-8 transition-colors text-sm font-medium"
+          className="inline-flex items-center text-gray-500 hover:text-orange-600 mb-8 transition-colors text-sm font-medium"
         >
           <svg
             className="w-4 h-4 mr-1"
@@ -205,16 +207,14 @@ export default function RepairPDF() {
           {/* LEFT COLUMN: Upload Area (8 cols) */}
           <div className="lg:col-span-8">
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
-              {/* Header Card */}
               <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
                 <h3 className="text-gray-700 font-semibold flex items-center gap-2">
-                  <Wrench className="w-4 h-4 text-blue-500" />
-                  Upload PDF to Repair
+                  <Unlock className="w-4 h-4 text-orange-500" />
+                  Upload Locked PDF
                 </h3>
               </div>
 
               <div className="p-6 flex-grow flex flex-col justify-center">
-                {/* 1. STATE: KOSONG / DRAG AREA */}
                 {selectedFiles.length === 0 && uploadingFiles.length === 0 ? (
                   <div
                     onDragOver={handleDragOver}
@@ -225,35 +225,36 @@ export default function RepairPDF() {
                       min-h-[320px] rounded-xl border-2 border-dashed transition-all duration-200
                       ${
                         isDragging
-                          ? 'border-blue-500 bg-blue-50/50 scale-[0.99]'
+                          ? 'border-orange-500 bg-orange-50/50 scale-[0.99]'
                           : 'border-gray-300 bg-gray-50 hover:bg-gray-100/50 hover:border-gray-400'
                       }
                     `}
                   >
-                    {/* Visual Icon / Image Wrapper */}
+                    {/* --- IMAGE FALLBACK LOGIC --- */}
                     <div className="mb-6 relative w-32 h-32 flex items-center justify-center">
                       {!imageError ? (
                         <img
-                          src="/asset/images/upload.svg"
-                          alt="Upload Illustration"
+                          src="/asset/images/unlock.svg" // Pastikan ada atau biarkan error agar fallback muncul
+                          alt="Unlock Illustration"
                           className="w-full h-full object-contain drop-shadow-sm animate-in fade-in zoom-in duration-300"
                           onError={() => setImageError(true)}
                         />
                       ) : (
-                        <div className="w-24 h-24 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center">
-                          <Wrench className="w-10 h-10" />
+                        // Fallback Icon: Gembok Terbuka
+                        <div className="w-24 h-24 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center ring-4 ring-orange-50/50">
+                          <Unlock className="w-10 h-10" />
                         </div>
                       )}
                     </div>
 
                     <p className="text-xl font-medium text-gray-700 mb-2">
-                      Drag & Drop corrupted PDF here
+                      Drag & Drop Locked PDF here
                     </p>
                     <p className="text-gray-400 text-sm mb-6">
-                      or click to browse from your computer
+                      Remove password security permanently
                     </p>
 
-                    <label className="relative overflow-hidden group inline-flex items-center px-8 py-3 bg-blue-600 text-white rounded-full cursor-pointer hover:bg-blue-700 transition-all shadow-lg shadow-blue-200">
+                    <label className="relative overflow-hidden group inline-flex items-center px-8 py-3 bg-orange-600 text-white rounded-full cursor-pointer hover:bg-orange-700 transition-all shadow-lg shadow-orange-200">
                       <CircleArrowUp className="w-5 h-5 mr-2 group-hover:animate-bounce" />
                       <span className="font-semibold">Browse File</span>
                       <input
@@ -263,36 +264,30 @@ export default function RepairPDF() {
                         className="hidden"
                       />
                     </label>
-
-                    <p className="mt-6 text-xs text-gray-400 flex items-center">
-                      <AlertCircle className="w-3 h-3 mr-1" />
-                      Supported format: PDF (Max 50MB)
-                    </p>
                   </div>
                 ) : (
-                  // 2. STATE: FILE SELECTED / UPLOADING / FINISHED
                   <div className="flex flex-col space-y-4">
-                    {/* Upload Progress List */}
+                    {/* Uploading Progress */}
                     {uploadingFiles.map((file) => (
                       <div
                         key={file.id}
-                        className="bg-white border border-gray-100 shadow-sm rounded-xl p-4 flex items-center gap-4 animate-in slide-in-from-bottom-2"
+                        className="bg-white border border-gray-100 shadow-sm rounded-xl p-4 flex items-center gap-4"
                       >
-                        <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <FileText className="w-6 h-6 text-blue-500" />
+                        <div className="w-12 h-12 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <FileText className="w-6 h-6 text-orange-500" />
                         </div>
                         <div className="flex-1">
                           <div className="flex justify-between mb-1">
                             <span className="font-medium text-gray-700 text-sm truncate max-w-[200px]">
                               {file.file.name}
                             </span>
-                            <span className="text-xs text-blue-600 font-bold">
+                            <span className="text-xs text-orange-600 font-bold">
                               {file.progress}%
                             </span>
                           </div>
                           <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
                             <div
-                              className="h-full bg-blue-500 transition-all duration-200 ease-out"
+                              className="h-full bg-orange-500 transition-all duration-200 ease-out"
                               style={{ width: `${file.progress}%` }}
                             />
                           </div>
@@ -300,39 +295,28 @@ export default function RepairPDF() {
                       </div>
                     ))}
 
-                    {/* Selected File Ready */}
+                    {/* File Ready */}
                     {selectedFiles.map((file, idx) => (
                       <div
                         key={idx}
-                        className="bg-white border border-blue-200 shadow-md shadow-blue-50 rounded-xl p-5 flex items-center justify-between animate-in fade-in"
+                        className="bg-white border border-orange-200 shadow-md shadow-orange-50 rounded-xl p-5 flex items-center justify-between animate-in fade-in"
                       >
                         <div className="flex items-center gap-4 overflow-hidden">
-                          <div className="w-12 h-12 bg-red-100 text-red-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <svg
-                              className="w-6 h-6"
-                              fill="currentColor"
-                              viewBox="0 0 20 20"
-                            >
-                              <path
-                                fillRule="evenodd"
-                                d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"
-                                clipRule="evenodd"
-                              />
-                            </svg>
+                          <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <Key className="w-6 h-6" />
                           </div>
                           <div className="min-w-0">
                             <p className="text-gray-900 font-medium truncate">
                               {file.name}
                             </p>
                             <p className="text-xs text-gray-500">
-                              {formatFileSize(file.size)} • Ready to repair
+                              {formatFileSize(file.size)} • Locked
                             </p>
                           </div>
                         </div>
                         <button
                           onClick={removeFile}
                           className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
-                          title="Remove file"
                         >
                           <svg
                             className="w-5 h-5"
@@ -351,34 +335,36 @@ export default function RepairPDF() {
                       </div>
                     ))}
 
-                    {/* Error Message */}
+                    {/* Error */}
                     {errorMsg && (
-                      <div className="p-4 bg-red-50 text-red-700 rounded-xl border border-red-100 flex items-start gap-3 text-sm animate-in fade-in">
+                      <div className="p-4 bg-red-50 text-red-700 rounded-xl border border-red-100 flex items-start gap-3 text-sm animate-in slide-in-from-top-2">
                         <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
                         <span>{errorMsg}</span>
                       </div>
                     )}
 
-                    {/* Success / Download Area */}
+                    {/* Success */}
                     {downloadUrl && (
-                      <div className="p-6 bg-green-50 border border-green-200 rounded-xl flex flex-col items-center justify-center text-center animate-in zoom-in duration-300">
-                        <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-3">
-                          <CheckCircle className="w-6 h-6" />
+                      <div className="p-5 bg-green-50 border border-green-200 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4 animate-in zoom-in-95">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-green-100 rounded-full text-green-600">
+                            <CheckCircle className="w-6 h-6" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-green-800">
+                              PDF Unlocked!
+                            </h4>
+                            <p className="text-sm text-green-700">
+                              Security has been removed successfully.
+                            </p>
+                          </div>
                         </div>
-                        <h4 className="text-green-800 font-bold text-lg mb-1">
-                          File Repaired Successfully!
-                        </h4>
-                        <p className="text-green-600 text-sm mb-4">
-                          Your PDF has been recovered and is ready to download.
-                        </p>
-
                         <a
                           href={downloadUrl}
-                          download={`repaired_${selectedFiles[0]?.name}`}
-                          className="inline-flex items-center px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all"
+                          download={`unlocked_${selectedFiles[0]?.name}`}
+                          className="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors whitespace-nowrap"
                         >
-                          <Download className="w-5 h-5 mr-2" />
-                          Download Result
+                          Download File
                         </a>
                       </div>
                     )}
@@ -388,37 +374,69 @@ export default function RepairPDF() {
             </div>
           </div>
 
-          {/* RIGHT COLUMN: Info & Action (4 cols) */}
+          {/* RIGHT COLUMN: Settings & Action (4 cols) */}
           <div className="lg:col-span-4 space-y-6">
-            {/* Action Card */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sticky top-24">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
               <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                Repair PDF
+                Unlock PDF
               </h2>
-              <p className="text-gray-500 text-sm mb-6 leading-relaxed">
-                Recover data from corrupted or damaged PDF files efficiently. We
-                use advanced algorithms to restore your document structure.
+              <p className="text-gray-500 text-sm mb-6">
+                Remove password security and owner restrictions from your PDF
+                file.
               </p>
 
+              {/* Form Input Password */}
+              <div className="space-y-4 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Enter PDF Password <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter the correct password"
+                      className="w-full pl-3 pr-10 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2 flex items-start gap-1">
+                    <ShieldAlert className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                    We need the password to decrypt the file initially. It will
+                    be removed in the download.
+                  </p>
+                </div>
+              </div>
+
               <button
-                type="button" // PENTING: Button type
-                onClick={handleRepair}
-                disabled={selectedFiles.length === 0 || isRepairing}
+                onClick={handleDecrypt}
+                disabled={
+                  selectedFiles.length === 0 || !password || isProcessing
+                }
                 className={`
                     w-full py-3.5 px-6 rounded-xl font-semibold text-white flex items-center justify-center gap-2 transition-all shadow-md
                     ${
-                      selectedFiles.length === 0 || isRepairing
+                      selectedFiles.length === 0 || !password || isProcessing
                         ? 'bg-gray-300 cursor-not-allowed text-gray-500 shadow-none'
-                        : 'bg-gray-900 hover:bg-gray-800 hover:-translate-y-0.5 hover:shadow-lg'
+                        : 'bg-orange-600 hover:bg-orange-700 hover:-translate-y-0.5 hover:shadow-lg'
                     }
                 `}
               >
-                {isRepairing ? (
-                  <>
+                {isProcessing ? (
+                  <span className="flex items-center gap-2">
                     <svg
-                      className="animate-spin h-5 w-5 text-gray-500"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
+                      className="animate-spin h-5 w-5 text-white"
                       viewBox="0 0 24 24"
                     >
                       <circle
@@ -435,38 +453,32 @@ export default function RepairPDF() {
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                       ></path>
                     </svg>
-                    <span className="text-gray-300 ml-2">Processing...</span>
-                  </>
+                    Unlocking...
+                  </span>
                 ) : (
                   <>
-                    Repair PDF Now <Wrench className="w-4 h-4" />
+                    Unlock PDF Now <Unlock className="w-4 h-4" />
                   </>
                 )}
               </button>
 
-              {/* Tips Section */}
+              {/* Features Section */}
               <div className="mt-6 pt-6 border-t border-gray-100">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-                  How it works
+                  Why Unlock?
                 </h4>
                 <ul className="space-y-3 text-sm text-gray-600">
                   <li className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">
-                      1
-                    </span>
-                    Upload your damaged PDF file.
+                    <CheckCircle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
+                    Remove printing restrictions
                   </li>
                   <li className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">
-                      2
-                    </span>
-                    Our system analyzes and fixes errors.
+                    <CheckCircle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
+                    Enable copy & edit text
                   </li>
                   <li className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">
-                      3
-                    </span>
-                    Download the recovered file instantly.
+                    <CheckCircle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
+                    Create a password-free copy
                   </li>
                 </ul>
               </div>

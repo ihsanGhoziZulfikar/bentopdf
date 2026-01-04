@@ -1,18 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef, ChangeEvent } from 'react';
 import Link from 'next/link';
-import {
-  ArrowLeft,
-  UploadCloud,
-  Instagram,
-  Linkedin,
-  Menu,
-  X,
-  FileText,
-  Trash2,
-  Zap,
-} from 'lucide-react';
+import Image from 'next/image';
+import Navbar from '@/app/components/navbar';
+import ToolsFooter from '@/app/components/footer/tools-footer';
 
 // --- LIBRARY IMPORTS ---
 import * as pdfjsLib from 'pdfjs-dist';
@@ -23,33 +15,70 @@ import JSZip from 'jszip';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 export default function PdfToWebp() {
-  // --- STATE MANAGEMENT ---
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [quality, setQuality] = useState(0.85);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [quality, setQuality] = useState(0.85);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
 
-  // Hydration fix for Next.js
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setSelectedFile(e.target.files[0]);
+      const file = e.target.files[0];
+
+      if (file.type !== 'application/pdf') {
+        setErrorMsg('Please select a valid PDF file.');
+        return;
+      }
+
+      setErrorMsg(null);
+      setIsUploading(true);
+      setUploadProgress(0);
+
+      // Simulasi progress upload
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += 10;
+        setUploadProgress(progress);
+
+        if (progress >= 100) {
+          clearInterval(interval);
+          setTimeout(() => {
+            setIsUploading(false);
+            setSelectedFile(file);
+            setUploadProgress(0);
+          }, 200);
+        }
+      }, 100);
+
+      setDownloadUrl(null);
     }
   };
 
   const removeFile = () => {
     setSelectedFile(null);
+    setDownloadUrl(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
-  // --- LOGIKA KONVERSI ---
-  const handleConvert = async () => {
-    if (!selectedFile) return;
+  const handleConvert = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+
+    if (!selectedFile) {
+      setErrorMsg('Please select a PDF file to convert.');
+      return;
+    }
 
     setIsProcessing(true);
+    setErrorMsg(null);
+
     const zip = new JSZip();
 
     try {
@@ -57,10 +86,9 @@ export default function PdfToWebp() {
       const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
       const pdf = await loadingTask.promise;
 
-      // Loop setiap halaman PDF
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
-        // Kita gunakan scale tetap 2.0 untuk WebP agar hasil tajam tapi file tetap kecil
+        // Scale 2.0 untuk menjaga ketajaman pada format WebP
         const viewport = page.getViewport({ scale: 2.0 });
 
         const canvas = document.createElement('canvas');
@@ -79,237 +107,390 @@ export default function PdfToWebp() {
 
         await page.render(renderContext).promise;
 
-        // PERBAIKAN LOGIKA: Menggunakan image/webp dan parameter quality
-        // canvas.toDataURL(type, encoderOptions)
+        // Konversi ke WebP dengan quality slider
         const imageData = canvas.toDataURL('image/webp', quality);
         const base64Data = imageData.replace(/^data:image\/webp;base64,/, '');
 
         zip.file(`page-${i}.webp`, base64Data, { base64: true });
 
-        // Memory cleanup
         canvas.width = 0;
         canvas.height = 0;
       }
 
       const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(
-        content,
-        `BentoPDF-WebP-${selectedFile.name.replace('.pdf', '')}.zip`
-      );
-    } catch (error) {
-      console.error('WebP Conversion Error:', error);
-      alert(
-        'Gagal mengonversi ke WebP. Pastikan browser Anda mendukung format ini.'
-      );
-    } finally {
+      const url = URL.createObjectURL(content);
+
+      setDownloadUrl(url);
       setIsProcessing(false);
+      setShowSuccessModal(true);
+    } catch (error) {
+      console.error('Error converting PDF to WebP:', error);
+      setIsProcessing(false);
+      setShowErrorModal(true);
     }
   };
 
-  if (!mounted) return null;
+  const handleDownload = () => {
+    if (downloadUrl && selectedFile) {
+      saveAs(
+        downloadUrl,
+        `BentoPDF-WebP-${selectedFile.name.replace('.pdf', '')}.zip`
+      );
+    }
+  };
+
+  const handleTryAgain = () => {
+    setShowErrorModal(false);
+    setErrorMsg(null);
+  };
+
+  const handleNext = () => {
+    setShowSuccessModal(false);
+    setDownloadUrl(null);
+    setSelectedFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-200 antialiased font-sans flex flex-col">
-      {/* --- NAVIGATION --- */}
-      <nav className="bg-gray-800 border-b border-gray-700 sticky top-0 z-30">
-        <div className="container mx-auto px-4">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex-shrink-0 flex items-center cursor-pointer">
-              <img
-                src="/images/favicon.svg"
-                alt="Bento PDF Logo"
-                className="h-8 w-8"
-              />
-              <span className="text-white font-bold text-xl ml-2">
-                <Link href="/">BentoPDF</Link>
-              </span>
-            </div>
+    <div className="min-h-screen bg-gray-50">
+      <Navbar />
 
-            <div className="hidden md:flex items-center space-x-8 text-white">
-              <Link
-                href="/"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                Home
-              </Link>
-              <Link
-                href="/about"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                About
-              </Link>
-              <Link
-                href="/contact"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                Contact
-              </Link>
-              <Link
-                href="/tools"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                All Tools
-              </Link>
-            </div>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+        <Link
+          href="/"
+          className="inline-flex items-center text-blue-600 hover:text-blue-700 mb-4 sm:mb-8 text-sm sm:text-base"
+        >
+          <svg
+            className="w-4 h-4 sm:w-5 sm:h-5 mr-1"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M15 19l-7-7 7-7"
+            />
+          </svg>
+          Back to Tools
+        </Link>
 
-            <div className="md:hidden flex items-center">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
+          {/* Upload Area */}
+          <div className="lg:col-span-2 order-1 lg:order-1">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+              <div className="border-2 border-dashed border-blue-300 rounded-lg p-6 sm:p-12 text-center bg-blue-50/30">
+                <div className="flex justify-center mb-4 sm:mb-6">
+                  <div className="relative w-24 h-24 sm:w-32 sm:h-32">
+                    <img
+                      src="/asset/images/upload.svg"
+                      alt="upload"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                </div>
+                <p className="text-gray-700 text-base sm:text-lg font-medium mb-2 px-2">
+                  Drag and drop your PDF to convert to optimized WebP.
+                </p>
+                <p className="text-gray-500 mb-4 sm:mb-6 text-sm sm:text-base">
+                  or
+                </p>
+                <label className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-3 bg-blue-50 text-blue-600 rounded-full cursor-pointer hover:bg-blue-100 transition-colors border border-blue-200 text-sm sm:text-base">
+                  <svg
+                    className="w-4 h-4 sm:w-5 sm:h-5 mr-2"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                    />
+                  </svg>
+                  Browse PDF
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/pdf"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                </label>
+                <div className="mt-4 sm:mt-6 flex items-center justify-center text-xs sm:text-sm text-blue-600 px-2">
+                  Modern Format: WebP (Superior Compression)
+                </div>
+              </div>
+
+              {errorMsg && (
+                <div className="mt-4 p-3 sm:p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs sm:text-sm">
+                  {errorMsg}
+                </div>
+              )}
+
+              {isUploading && (
+                <div className="mt-4 space-y-3">
+                  <div className="p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
+                        <svg
+                          className="w-6 h-6 sm:w-8 sm:h-8 text-red-500 flex-shrink-0"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-gray-900 truncate font-medium text-sm sm:text-base">
+                            Reading PDF...
+                          </p>
+                          <p className="text-gray-500 text-xs sm:text-sm">
+                            Preparing for compression
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${uploadProgress}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!isUploading && selectedFile && (
+                <div className="mt-4">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3">
+                    Selected File
+                  </h3>
+                  <div className="p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
+                        <svg
+                          className="w-6 h-6 sm:w-8 sm:h-8 text-red-500 flex-shrink-0"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-gray-900 truncate font-medium text-sm sm:text-base">
+                            {selectedFile.name}
+                          </p>
+                          <p className="text-gray-500 text-xs sm:text-sm">
+                            {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={removeFile}
+                        className="p-1.5 sm:p-2 text-red-500 hover:text-red-700 transition-colors"
+                      >
+                        <svg
+                          className="w-4 h-4 sm:w-5 sm:h-5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2"
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Settings Panel */}
+          <div className="lg:col-span-1 order-1 lg:order-2">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+                PDF to WebP
+              </h2>
+              <p className="text-gray-600 mb-4 sm:mb-6 text-sm sm:text-base">
+                Create highly compressed images that load faster on the web.
+              </p>
+
+              {selectedFile && !isUploading && (
+                <div className="mb-4 sm:mb-6">
+                  <div className="flex justify-between items-center mb-2">
+                    <label
+                      htmlFor="quality"
+                      className="text-sm font-medium text-gray-700"
+                    >
+                      Compression Quality
+                    </label>
+                    <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded">
+                      {Math.round(quality * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    id="quality"
+                    min="0.1"
+                    max="1.0"
+                    step="0.01"
+                    value={quality}
+                    onChange={(e) => setQuality(parseFloat(e.target.value))}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                  />
+                  <div className="flex justify-between text-[10px] text-gray-500 mt-2">
+                    <span>Smallest File</span>
+                    <span>Best Visual</span>
+                  </div>
+                </div>
+              )}
+
               <button
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="p-2 text-gray-400 hover:text-white transition-colors"
+                type="button"
+                onClick={handleConvert}
+                disabled={!selectedFile || isUploading || isProcessing}
+                className="w-full py-2.5 sm:py-3 px-4 sm:px-6 bg-gray-900 text-white rounded-3xl hover:bg-gray-800 disabled:bg-gray-300 transition-all flex items-center justify-center font-medium text-sm sm:text-base shadow-sm"
               >
-                {!isMenuOpen ? (
-                  <Menu className="h-6 w-6" />
+                {isProcessing ? (
+                  <>
+                    <svg
+                      className="animate-spin -ml-1 mr-2 h-4 w-4 sm:h-5 sm:w-5 text-white"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                    Processing WebP...
+                  </>
                 ) : (
-                  <X className="h-6 w-6" />
+                  <>
+                    Convert to WebP{' '}
+                    <svg
+                      className="w-4 h-4 sm:w-5 sm:h-5 ml-2"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M13 10V3L4 14h7v7l9-11h-7z"
+                      />
+                    </svg>
+                  </>
                 )}
               </button>
             </div>
           </div>
         </div>
-      </nav>
-
-      {/* --- MAIN CONTENT --- */}
-      <main className="flex-grow flex flex-col items-center justify-start py-12 p-4">
-        <div className="bg-gray-800 rounded-xl shadow-xl px-4 py-8 md:p-8 max-w-2xl w-full text-gray-200 border border-gray-700">
-          <Link href="/tools" className="inline-flex">
-            <button className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 mb-6 font-semibold transition-colors">
-              <ArrowLeft className="w-5 h-5" />
-              <span>Back to Tools</span>
-            </button>
-          </Link>
-
-          <h1 className="text-2xl font-bold text-white mb-2 flex items-center gap-2">
-            <Zap className="text-yellow-400 w-6 h-6 fill-yellow-400" /> PDF to
-            WebP
-          </h1>
-          <p className="text-gray-400 mb-6 text-sm">
-            Convert PDF pages into modern WebP images. Get the best compression
-            with high visual quality.
-          </p>
-
-          {/* Drop Zone */}
-          <div className="relative flex flex-col items-center justify-center w-full h-48 md:h-64 border-2 border-dashed border-gray-600 rounded-xl cursor-pointer bg-gray-900 hover:bg-gray-700 transition-all duration-300 group">
-            <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
-              <UploadCloud className="w-10 h-10 mb-3 text-gray-400 group-hover:text-indigo-400 transition-colors" />
-              <p className="mb-2 text-sm text-gray-400 font-medium">
-                <span className="text-indigo-400 font-bold">
-                  Click to upload
-                </span>{' '}
-                or drag and drop
-              </p>
-              <p className="text-[10px] text-gray-500 uppercase tracking-widest">
-                Processed in your browser
-              </p>
-            </div>
-            <input
-              type="file"
-              className="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
-              accept="application/pdf"
-              onChange={handleFileChange}
-              disabled={isProcessing}
-            />
-          </div>
-
-          {/* File Info Area */}
-          {selectedFile && (
-            <div className="mt-4 p-4 bg-gray-900/50 rounded-lg border border-gray-700 flex justify-between items-center animate-in fade-in duration-300">
-              <div className="flex items-center gap-3 overflow-hidden">
-                <FileText className="w-5 h-5 text-indigo-400 flex-shrink-0" />
-                <span className="text-sm truncate font-medium text-gray-300">
-                  {selectedFile.name}
-                </span>
-              </div>
-              <button
-                onClick={removeFile}
-                className="text-red-400 hover:text-red-300 p-1 transition-colors"
-                disabled={isProcessing}
-              >
-                <Trash2 className="w-5 h-5" />
-              </button>
-            </div>
-          )}
-
-          {/* Options & Action */}
-          {selectedFile && (
-            <div className="mt-6 space-y-6 animate-in slide-in-from-bottom-2 duration-500">
-              <div className="bg-gray-900/30 p-4 rounded-lg border border-gray-700">
-                <div className="flex justify-between items-center mb-3">
-                  <label
-                    htmlFor="webp-quality"
-                    className="text-xs font-bold uppercase tracking-wider text-gray-400"
-                  >
-                    Compression Quality
-                  </label>
-                  <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-400 text-xs rounded-md font-bold">
-                    {Math.round(quality * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  id="webp-quality"
-                  min="0.1"
-                  max="1.0"
-                  step="0.01"
-                  value={quality}
-                  onChange={(e) => setQuality(parseFloat(e.target.value))}
-                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                />
-                <div className="flex justify-between text-[10px] text-gray-500 mt-2 font-medium">
-                  <span>Small File</span>
-                  <span>Best Quality</span>
-                </div>
-              </div>
-
-              <button
-                onClick={handleConvert}
-                disabled={isProcessing}
-                className="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50"
-              >
-                {isProcessing ? 'Converting to WebP...' : 'Download ZIP'}
-              </button>
-            </div>
-          )}
-        </div>
       </main>
 
-      {/* --- FOOTER --- */}
-      <footer className="mt-16 border-t border-gray-700 py-8 bg-gray-900 text-white">
-        <div className="container mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="flex items-center">
-            <img
-              src="/images/favicon.svg"
-              alt="Bento PDF Logo"
-              className="h-6 w-6 mr-2"
-            />
-            <span className="font-bold">BentoPDF</span>
-          </div>
-          <p className="text-gray-500 text-xs text-center">
-            &copy; 2026 BentoPDF. Your files are safe and never stored on our
-            server.
-          </p>
-          <div className="flex space-x-4">
-            <Instagram className="w-5 h-5 text-gray-400 hover:text-white cursor-pointer" />
-            <Linkedin className="w-5 h-5 text-gray-400 hover:text-white cursor-pointer" />
-          </div>
-        </div>
-      </footer>
-
-      {/* Processing Loader */}
-      {isProcessing && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 p-8 rounded-2xl flex flex-col items-center gap-4 border border-gray-700 shadow-2xl text-center max-w-xs w-full">
-            <div className="w-12 h-12 border-4 border-gray-600 border-t-indigo-500 rounded-full animate-spin"></div>
-            <div className="space-y-1">
-              <p className="text-white text-lg font-medium tracking-tight">
-                Optimizing Images...
-              </p>
-              <p className="text-gray-400 text-xs italic leading-relaxed">
-                Encoding pages to WebP format. This might take a few seconds.
-              </p>
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 text-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full animate-in fade-in zoom-in duration-300">
+            <div className="flex justify-center mb-4">
+              <Image
+                src="/asset/images/success-modal.svg"
+                alt="success"
+                width={60}
+                height={60}
+              />
             </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">
+              Optimization Complete!
+            </h2>
+            <p className="text-gray-600 mb-2">
+              Your WebP files are compressed and ready.
+            </p>
+            <button
+              onClick={handleDownload}
+              className="text-blue-600 font-semibold hover:underline mb-6 block w-full"
+            >
+              Download ZIP manually
+            </button>
+            <button
+              onClick={handleNext}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-full flex items-center justify-center gap-2 transition-colors"
+            >
+              Continue{' '}
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M9 5l7 7-7 7"
+                />
+              </svg>
+            </button>
           </div>
         </div>
       )}
+
+      {/* Error Modal */}
+      {showErrorModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 text-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full animate-in fade-in zoom-in duration-300">
+            <div className="flex justify-center mb-4">
+              <Image
+                src="/asset/images/failed-modal.svg"
+                alt="failed"
+                width={60}
+                height={60}
+              />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">
+              Conversion Failed
+            </h2>
+            <p className="text-gray-600 mb-6">
+              We couldn't process this PDF to WebP. Please check if the file is
+              corrupted.
+            </p>
+            <button
+              onClick={handleTryAgain}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-full transition-colors"
+            >
+              Try Another File
+            </button>
+          </div>
+        </div>
+      )}
+
+      <ToolsFooter />
     </div>
   );
 }

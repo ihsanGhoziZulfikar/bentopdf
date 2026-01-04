@@ -6,10 +6,10 @@ import Navbar from '@/app/components/navbar';
 import ToolsFooter from '../../components/footer/tools-footer';
 import Image from 'next/image';
 
-export default function BmpToPdf() {
+export default function WordToPdf() {
   // --- STATE MANAGEMENT ---
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [quality, setQuality] = useState('medium');
+  const [layout, setLayout] = useState('auto'); // Opsi tambahan yang relevan untuk Word
   const [isProcessing, setIsProcessing] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -28,25 +28,27 @@ export default function BmpToPdf() {
     if (e.target.files && e.target.files.length > 0) {
       const newFiles = Array.from(e.target.files);
 
-      // VALIDASI: Filter khusus BMP
-      const bmpFiles = newFiles.filter(
+      // VALIDASI: Filter khusus Word (.doc, .docx)
+      const wordFiles = newFiles.filter(
         (f) =>
-          f.type === 'image/bmp' ||
-          f.type === 'image/x-windows-bmp' ||
-          f.name.toLowerCase().endsWith('.bmp')
+          f.type === 'application/msword' ||
+          f.type ===
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+          f.name.toLowerCase().endsWith('.doc') ||
+          f.name.toLowerCase().endsWith('.docx')
       );
 
-      if (bmpFiles.length !== newFiles.length) {
-        setErrorMsg('Some files were skipped because they are not BMP images.');
+      if (wordFiles.length !== newFiles.length) {
+        setErrorMsg(
+          'Some files were skipped because they are not Word documents.'
+        );
       } else {
         setErrorMsg(null);
       }
 
-      if (bmpFiles.length === 0) return;
-
       setIsUploading(true);
 
-      const uploadFiles = bmpFiles.map((f) => ({
+      const uploadFiles = wordFiles.map((f) => ({
         name: f.name,
         size: f.size,
         progress: 0,
@@ -55,7 +57,7 @@ export default function BmpToPdf() {
       setUploadingFiles(uploadFiles);
 
       // Simulasi Upload Progress
-      bmpFiles.forEach((file, index) => {
+      wordFiles.forEach((file, index) => {
         let progress = 0;
         const interval = setInterval(() => {
           progress += 10;
@@ -68,9 +70,9 @@ export default function BmpToPdf() {
           if (progress >= 100) {
             clearInterval(interval);
             setTimeout(() => {
-              if (index === bmpFiles.length - 1) {
+              if (index === wordFiles.length - 1) {
                 setIsUploading(false);
-                setSelectedFiles((prev) => [...prev, ...bmpFiles]);
+                setSelectedFiles((prev) => [...prev, ...wordFiles]);
                 setUploadingFiles([]);
               }
             }, 200);
@@ -102,7 +104,7 @@ export default function BmpToPdf() {
     e.preventDefault();
 
     if (selectedFiles.length === 0) {
-      setErrorMsg('Please select at least 1 BMP file to convert.');
+      setErrorMsg('Please select at least 1 Word file to convert.');
       return;
     }
 
@@ -112,8 +114,7 @@ export default function BmpToPdf() {
     // Simulasi proses konversi
     setTimeout(() => {
       setIsProcessing(false);
-
-      const isSuccess = Math.random() > 0.2; // 80% success rate
+      const isSuccess = Math.random() > 0.1; // 90% success rate
 
       if (isSuccess) {
         setDownloadUrl('#download-url');
@@ -121,7 +122,7 @@ export default function BmpToPdf() {
       } else {
         setShowErrorModal(true);
       }
-    }, 2000);
+    }, 2500);
   };
 
   const handleTryAgain = () => {
@@ -179,7 +180,7 @@ export default function BmpToPdf() {
                   </div>
                 </div>
                 <p className="text-gray-700 text-base sm:text-lg font-medium mb-2 px-2">
-                  Drag and drop your BMP files here to start.
+                  Drag and drop your Word documents here.
                 </p>
                 <p className="text-gray-500 mb-4 sm:mb-6 text-sm sm:text-base">
                   or
@@ -203,7 +204,7 @@ export default function BmpToPdf() {
                     ref={fileInputRef}
                     type="file"
                     multiple
-                    accept=".bmp, image/bmp"
+                    accept=".doc, .docx, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     onChange={handleFileChange}
                     className="hidden"
                   />
@@ -220,7 +221,7 @@ export default function BmpToPdf() {
                       clipRule="evenodd"
                     />
                   </svg>
-                  Supported formats: BMP (Bitmap Image)
+                  Supported formats: DOC, DOCX
                 </div>
               </div>
 
@@ -230,6 +231,7 @@ export default function BmpToPdf() {
                 </div>
               )}
 
+              {/* Uploading Progress */}
               {isUploading && uploadingFiles.length > 0 && (
                 <div className="mt-4 space-y-3">
                   {uploadingFiles.map((file, index) => (
@@ -239,16 +241,13 @@ export default function BmpToPdf() {
                     >
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
+                          {/* Word Icon Blue */}
                           <svg
                             className="w-6 h-6 sm:w-8 sm:h-8 text-blue-500 flex-shrink-0"
                             fill="currentColor"
                             viewBox="0 0 20 20"
                           >
-                            <path
-                              fillRule="evenodd"
-                              d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"
-                              clipRule="evenodd"
-                            />
+                            <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
                           </svg>
                           <div className="flex-1 min-w-0">
                             <p className="text-gray-900 truncate font-medium text-sm sm:text-base">
@@ -271,54 +270,31 @@ export default function BmpToPdf() {
                 </div>
               )}
 
+              {/* File List Grid */}
               {!isUploading && selectedFiles.length > 0 && (
                 <div className="mt-4">
                   <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3">
-                    BMP Files to Convert ({selectedFiles.length})
+                    Documents to Convert ({selectedFiles.length})
                   </h3>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                     {selectedFiles.map((file, index) => (
                       <div
                         key={`file-${index}`}
-                        className="relative group bg-gray-50 rounded-lg border border-gray-200 p-3 hover:border-gray-300 transition-colors"
+                        className="relative group bg-gray-50 rounded-lg border border-gray-200 p-3 hover:border-blue-300 transition-colors"
                       >
-                        <div className="aspect-square bg-gray-200 rounded mb-2 flex items-center justify-center overflow-hidden">
-                          {/* BMP Icon */}
+                        <div className="aspect-square bg-blue-50 rounded mb-2 flex items-center justify-center overflow-hidden">
                           <svg
                             className="w-12 h-12 text-blue-400"
                             fill="currentColor"
                             viewBox="0 0 20 20"
                           >
-                            <path
-                              fillRule="evenodd"
-                              d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"
-                              clipRule="evenodd"
-                            />
+                            <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
                           </svg>
                         </div>
                         <p className="text-xs text-gray-900 truncate font-medium mb-1">
                           {file.name}
                         </p>
                         <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => moveFile(index, 'up')}
-                            disabled={index === 0}
-                            className="p-1 bg-white rounded shadow-sm text-gray-600 hover:text-blue-600 disabled:opacity-30"
-                          >
-                            <svg
-                              className="w-3 h-3"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth="2"
-                                d="M5 15l7-7 7 7"
-                              />
-                            </svg>
-                          </button>
                           <button
                             onClick={() => removeFile(index)}
                             className="p-1 bg-white rounded shadow-sm text-red-500 hover:text-red-700"
@@ -338,9 +314,6 @@ export default function BmpToPdf() {
                             </svg>
                           </button>
                         </div>
-                        <div className="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1.5 py-0.5 rounded">
-                          {index + 1}
-                        </div>
                       </div>
                     ))}
                   </div>
@@ -353,30 +326,30 @@ export default function BmpToPdf() {
           <div className="lg:col-span-1 order-1 lg:order-2">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-                BMP to PDF
+                Word to PDF
               </h2>
               <p className="text-gray-600 mb-4 sm:mb-6 text-sm sm:text-base">
-                Convert your BMP images into a professional PDF document in
-                seconds.
+                Easily convert your DOC and DOCX files to high-quality PDF
+                documents.
               </p>
 
               {selectedFiles.length > 0 && !isUploading && (
                 <div className="mb-4 sm:mb-6">
                   <label
-                    htmlFor="quality"
+                    htmlFor="layout"
                     className="block mb-2 text-sm font-medium text-gray-700"
                   >
-                    Page Orientation
+                    Page Layout
                   </label>
                   <select
-                    id="quality"
-                    value={quality}
-                    onChange={(e) => setQuality(e.target.value)}
+                    id="layout"
+                    value={layout}
+                    onChange={(e) => setLayout(e.target.value)}
                     className="w-full bg-white border border-gray-300 text-gray-900 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 text-sm"
                   >
-                    <option value="auto">Auto (Detect)</option>
-                    <option value="portrait">Portrait</option>
-                    <option value="landscape">Landscape</option>
+                    <option value="auto">Auto Detect</option>
+                    <option value="portrait">Always Portrait</option>
+                    <option value="landscape">Always Landscape</option>
                   </select>
                 </div>
               )}
@@ -389,7 +362,47 @@ export default function BmpToPdf() {
                 }
                 className="w-full py-2.5 sm:py-3 px-4 bg-blue-700 text-white rounded-3xl hover:bg-blue-800 disabled:bg-gray-300 transition-colors flex items-center justify-center font-medium text-sm sm:text-base"
               >
-                {isProcessing ? 'Converting...' : 'Convert to PDF'}
+                {isProcessing ? (
+                  <>
+                    <svg
+                      className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                    Converting Word...
+                  </>
+                ) : (
+                  <>
+                    Convert to PDF
+                    <svg
+                      className="w-4 h-4 sm:w-5 sm:h-5 ml-2"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M9 5l7 7-7 7"
+                      />
+                    </svg>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -399,8 +412,8 @@ export default function BmpToPdf() {
       {/* Success Modal */}
       {showSuccessModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-lg w-auto text-center">
-            <div className="flex justify-center mb-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-lg w-auto text-center animate-in fade-in zoom-in duration-300">
+            <div className="flex justify-center">
               <Image
                 src="/asset/images/success-modal.svg"
                 alt="success"
@@ -408,23 +421,21 @@ export default function BmpToPdf() {
                 height={50}
               />
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">
-              Conversion Ready!
-            </h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">Success!</h2>
             <p className="text-gray-600 mb-6">
-              Your BMP files have been successfully converted to PDF.
+              Your Word document has been converted to PDF.
             </p>
             <button
               onClick={handleDownload}
-              className="mx-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-full flex items-center gap-2 mb-4"
+              className="mx-auto bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-8 rounded-full flex items-center gap-2 transition-colors mb-4"
             >
               Download PDF
             </button>
             <button
               onClick={handleNext}
-              className="block w-full text-gray-500 hover:text-gray-700 text-sm"
+              className="text-gray-500 hover:text-gray-700 text-sm font-medium"
             >
-              Convert more files
+              Convert Another Document
             </button>
           </div>
         </div>
@@ -433,8 +444,8 @@ export default function BmpToPdf() {
       {/* Error Modal */}
       {showErrorModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
-            <div className="flex justify-center mb-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center animate-in fade-in zoom-in duration-300">
+            <div className="flex justify-center">
               <Image
                 src="/asset/images/failed-modal.svg"
                 alt="error"
@@ -442,13 +453,14 @@ export default function BmpToPdf() {
                 height={50}
               />
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">Oops!</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">Failed!</h2>
             <p className="text-gray-600 mb-6">
-              Something went wrong while processing your BMP images.
+              Unable to process the document. Please ensure it's not password
+              protected.
             </p>
             <button
               onClick={handleTryAgain}
-              className="mx-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-full"
+              className="mx-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-full transition-colors"
             >
               Try Again
             </button>

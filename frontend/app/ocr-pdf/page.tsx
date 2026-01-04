@@ -1,379 +1,408 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, ChangeEvent } from 'react';
 import Link from 'next/link';
-import {
-  ArrowLeft,
-  UploadCloud,
-  ChevronDown,
-  ClipboardCopy,
-  Instagram,
-  Linkedin,
-} from 'lucide-react';
+import Navbar from '../components/navbar';
 
 export default function OcrPDF() {
-  // --- STATE MANAGEMENT ---
-  const [file, setFile] = useState<File | null>(null);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  // --- STATE ---
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [ocrResult, setOcrResult] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [language, setLanguage] = useState<string>('eng'); // Default English
 
-  // State Proses
-  const [isLoading, setIsLoading] = useState(false);
-  const [ocrResult, setOcrResult] = useState<{
-    text: string;
-    pdfUrl: string;
-  } | null>(null);
-  const [statusMessage, setStatusMessage] = useState('Initializing...');
-
-  // Handle Select File
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-      setOcrResult(null); // Reset hasil lama
+  // 1. Fungsi saat user memilih file (Dibatasi 1 file untuk OCR)
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setSelectedFile(e.target.files[0]);
+      setOcrResult(null);
+      setErrorMsg(null);
     }
   };
 
-  // Handle OCR API Call
-  const handleStartOCR = async () => {
-    if (!file) return;
+  // 2. Fungsi Utama: Kirim ke Backend OCR
+  const handleOcr = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
 
-    setIsLoading(true);
-    setStatusMessage('Uploading and Processing PDF...');
+    if (!selectedFile) {
+      setErrorMsg('Please select a PDF file first.');
+      return;
+    }
+
+    setIsProcessing(true);
+    setErrorMsg(null);
+    setOcrResult(null);
 
     try {
       const formData = new FormData();
-      formData.append('file', file);
-      formData.append('language', 'eng+ind'); // Default dual language
+      formData.append('file', selectedFile);
+      formData.append('language', language); // Mengirim bahasa jika backend mendukung
 
-      const response = await fetch('http://localhost:5000/api/pdf/ocr', {
+      // Ganti URL ini dengan endpoint backend OCR Anda
+      const response = await fetch('http://localhost:5000/api/ocr', {
         method: 'POST',
         body: formData,
       });
 
-      const json = await response.json();
-
       if (!response.ok) {
-        throw new Error(json.message || 'Gagal melakukan OCR');
+        const errorData = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(errorData.error || 'OCR process failed on server.');
       }
 
-      // Set Hasil
-      setOcrResult({
-        text: json.data.text,
-        pdfUrl: json.data.searchable_pdf,
-      });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      console.error(error);
-      alert(error.message || 'Terjadi kesalahan server');
+      // Asumsi backend mengembalikan JSON: { text: "Hasil OCR..." }
+      const data = await response.json();
+      setOcrResult(data.text || 'No text found in document.');
+    } catch (error) {
+      console.error('Frontend Error:', error);
+      let message = 'Failed to connect to server or process file.';
+      if (error instanceof Error) {
+        message = error.message;
+      }
+      setErrorMsg(message);
     } finally {
-      setIsLoading(false);
+      setIsProcessing(false);
     }
   };
 
-  // Helper Copy Text
+  const removeFile = () => {
+    setSelectedFile(null);
+    setOcrResult(null);
+  };
+
   const copyToClipboard = () => {
-    if (ocrResult?.text) {
-      navigator.clipboard.writeText(ocrResult.text);
+    if (ocrResult) {
+      navigator.clipboard.writeText(ocrResult);
       alert('Text copied to clipboard!');
     }
   };
 
-  // Helper Download Text
   const downloadTextFile = () => {
-    if (!ocrResult?.text) return;
-    const element = document.createElement('a');
-    const fileBlob = new Blob([ocrResult.text], { type: 'text/plain' });
-    element.href = URL.createObjectURL(fileBlob);
-    element.download = 'ocr_result.txt';
-    document.body.appendChild(element);
-    element.click();
+    if (!ocrResult) return;
+    const blob = new Blob([ocrResult], { type: 'text/plain' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ocr-result-${selectedFile?.name.replace('.pdf', '')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-200 antialiased font-sans">
-      {/* --- NAVIGATION --- */}
-      <nav className="bg-gray-800 border-b border-gray-700 sticky top-0 z-30">
-        <div className="container mx-auto px-4">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex-shrink-0 flex items-center cursor-pointer">
-              <img
-                src="/images/favicon.svg"
-                alt="Bento PDF Logo"
-                className="h-8 w-8"
-              />
-              <span className="text-white font-bold text-xl ml-2">
-                <Link href="/">BentoPDF</Link>
-              </span>
-            </div>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <Navbar />
 
-            {/* Desktop Menu */}
-            <div className="hidden md:flex items-center space-x-8 text-white">
-              <Link
-                href="/"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                Home
-              </Link>
-              <Link
-                href="/about"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                About
-              </Link>
-              <Link
-                href="/contact"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                Contact
-              </Link>
-            </div>
-
-            {/* Mobile Menu Button */}
-            <div className="md:hidden flex items-center">
-              <button
-                type="button"
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="text-gray-400 hover:text-white hover:bg-gray-700 p-2 rounded-md"
-              >
-                <span className="sr-only">Open main menu</span>
-                {!isMenuOpen ? (
-                  <svg
-                    className="block h-6 w-6"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M4 6h16M4 12h16M4 18h16"
-                    />
-                  </svg>
-                ) : (
-                  <svg
-                    className="block h-6 w-6"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Mobile Menu Dropdown */}
-        {isMenuOpen && (
-          <div className="md:hidden bg-gray-800 border-t border-gray-700 p-2 space-y-1">
-            <Link
-              href="/"
-              className="block px-3 py-2 text-white hover:bg-gray-700 rounded"
-            >
-              Home
-            </Link>
-            <Link
-              href="/tools"
-              className="block px-3 py-2 text-white hover:bg-gray-700 rounded"
-            >
-              All Tools
-            </Link>
-          </div>
-        )}
-      </nav>
-
-      {/* --- MAIN CONTENT --- */}
-      <div className="min-h-screen flex flex-col items-center justify-start py-12 p-4 bg-gray-900">
-        <div className="bg-gray-800 rounded-xl shadow-xl px-4 py-8 md:p-8 max-w-2xl w-full text-gray-200 border border-gray-700">
-          <Link
-            href="/"
-            className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 mb-6 font-semibold transition-colors"
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+        <Link
+          href="/"
+          className="inline-flex items-center text-blue-600 hover:text-blue-700 mb-4 sm:mb-8 text-sm sm:text-base"
+        >
+          <svg
+            className="w-4 h-4 sm:w-5 sm:h-5 mr-1"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
           >
-            <ArrowLeft className="w-5 h-5" />
-            <span>Back to Tools</span>
-          </Link>
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M15 19l-7-7 7-7"
+            />
+          </svg>
+          Back to Tools
+        </Link>
 
-          <h1 className="text-2xl font-bold text-white mb-2">OCR PDF</h1>
-          <p className="text-gray-400 mb-6">
-            Convert scanned PDFs into searchable documents. Select one or more
-            languages present in your file.
-          </p>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
+          {/* Upload Area (Left Column) */}
+          <div className="lg:col-span-2 order-1 lg:order-1">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+              {!selectedFile ? (
+                // Tampilan Belum Upload
+                <div className="border-2 border-dashed border-blue-300 rounded-lg p-6 sm:p-12 text-center bg-blue-50/30">
+                  <div className="flex justify-center mb-4 sm:mb-6">
+                    <div className="relative w-24 h-24 sm:w-32 sm:h-32">
+                      <img
+                        src="/asset/images/upload.svg"
+                        alt="upload"
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-gray-700 text-base sm:text-lg font-medium mb-2 px-2">
+                    Drag and drop your PDF here to start OCR.
+                  </p>
+                  <p className="text-gray-500 mb-4 sm:mb-6 text-sm sm:text-base">
+                    or
+                  </p>
+                  <label className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-3 bg-blue-50 text-blue-600 rounded-full cursor-pointer hover:bg-blue-100 transition-colors border border-blue-200 text-sm sm:text-base">
+                    <svg
+                      className="w-4 h-4 sm:w-5 sm:h-5 mr-2"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                      />
+                    </svg>
+                    Browse File
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                  </label>
+                  <div className="mt-4 sm:mt-6 flex items-center justify-center text-xs sm:text-sm text-blue-600 px-2">
+                    <svg
+                      className="w-3 h-3 sm:w-4 sm:h-4 mr-1 flex-shrink-0"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                    Supported: PDF (Max. 50 MB)
+                  </div>
+                </div>
+              ) : (
+                // Tampilan Setelah File Dipilih
+                <div className="space-y-3 sm:space-y-4">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">
+                    Selected File
+                  </h3>
 
-          {/* How it works info box */}
-          <div className="p-3 bg-gray-900 rounded-lg border border-gray-700 mb-6">
-            <p className="text-sm text-gray-300">
-              <strong className="text-white">How it works:</strong>
-            </p>
-            <ul className="list-disc list-inside text-xs text-gray-400 mt-1 space-y-1">
-              <li>
-                <strong className="text-white">Extract Text:</strong> Uses OCR
-                logic to recognize text.
-              </li>
-              <li>
-                <strong className="text-white">Searchable Output:</strong>{' '}
-                Creates text data from images.
-              </li>
-            </ul>
+                  {errorMsg && (
+                    <div className="p-3 sm:p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs sm:text-sm">
+                      {errorMsg}
+                    </div>
+                  )}
+
+                  {/* File Item */}
+                  <div className="flex items-center justify-between p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
+                    <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
+                      <svg
+                        className="w-6 h-6 sm:w-8 sm:h-8 text-red-500 flex-shrink-0"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-gray-900 truncate font-medium text-sm sm:text-base">
+                          {selectedFile.name}
+                        </p>
+                        <p className="text-gray-500 text-xs sm:text-sm">
+                          {(selectedFile.size / 1024).toFixed(1)} KB
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-1 sm:space-x-2 ml-2 sm:ml-4">
+                      <button
+                        onClick={removeFile}
+                        className="p-1.5 sm:p-2 text-red-500 hover:text-red-700"
+                        title="Remove file"
+                      >
+                        <svg
+                          className="w-4 h-4 sm:w-5 sm:h-5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2"
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Result Area (Hanya muncul jika sudah ada hasil OCR) */}
+                  {ocrResult && (
+                    <div className="mt-6 pt-6 border-t border-gray-100">
+                      <div className="flex justify-between items-center mb-3">
+                        <h4 className="font-semibold text-gray-900">
+                          Extracted Text
+                        </h4>
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={copyToClipboard}
+                            className="text-xs text-blue-600 hover:underline"
+                          >
+                            Copy Text
+                          </button>
+                          <span className="text-gray-300">|</span>
+                          <button
+                            onClick={downloadTextFile}
+                            className="text-xs text-blue-600 hover:underline"
+                          >
+                            Download .txt
+                          </button>
+                        </div>
+                      </div>
+                      <textarea
+                        readOnly
+                        className="w-full h-64 p-3 bg-gray-50 border border-gray-200 rounded-md text-sm text-gray-800 font-mono focus:ring-blue-500 focus:border-blue-500"
+                        value={ocrResult}
+                      ></textarea>
+                    </div>
+                  )}
+
+                  {/* Tombol Ganti File (jika ingin replace) */}
+                  <label className="flex items-center justify-center w-full p-2 mt-2 border border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 hover:bg-blue-50/30 transition-colors">
+                    <span className="text-gray-500 text-xs sm:text-sm">
+                      Change File
+                    </span>
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* DROP ZONE */}
-          {!file && (
-            <div className="relative flex flex-col items-center justify-center w-full h-48 md:h-64 border-2 border-dashed border-gray-600 rounded-xl cursor-pointer bg-gray-900 hover:bg-gray-700 transition-colors duration-300 group">
-              <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                <UploadCloud className="w-10 h-10 mb-3 text-gray-400 group-hover:text-indigo-400 transition-colors" />
-                <p className="mb-2 text-sm text-gray-400">
-                  <span className="font-semibold">Click to select PDF</span> or
-                  drag and drop
-                </p>
-              </div>
-              <input
-                type="file"
-                className="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
-                accept="application/pdf"
-                onChange={handleFileChange}
-              />
-            </div>
-          )}
-
-          {/* FILE SELECTED DISPLAY */}
-          {file && (
-            <div className="bg-gray-900 border border-gray-600 rounded-lg p-4 flex justify-between items-center mb-6">
-              <div className="flex items-center gap-3">
-                <div className="bg-indigo-900 p-2 rounded text-indigo-300 font-bold text-xs">
-                  PDF
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-white truncate max-w-[200px]">
-                    {file.name}
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    {(file.size / 1024 / 1024).toFixed(2)} MB
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setFile(null);
-                  setOcrResult(null);
-                }}
-                className="text-red-400 hover:text-red-300 text-sm font-semibold"
-              >
-                Change
-              </button>
-            </div>
-          )}
-
-          {/* OPTIONS & PROCESS BUTTON */}
-          {file && !ocrResult && !isLoading && (
-            <div className="mt-6 space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              {/* Advanced settings (Visual Only for now) */}
-              <div className="bg-gray-900 border border-gray-700 rounded-lg p-3">
-                <button
-                  onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
-                  className="w-full text-sm font-medium text-gray-300 cursor-pointer flex items-center justify-between focus:outline-none"
-                >
-                  <span>Advanced Settings</span>
-                  <ChevronDown
-                    className={`w-4 h-4 transition-transform ${isAdvancedOpen ? 'rotate-180' : ''}`}
-                  />
-                </button>
-                {isAdvancedOpen && (
-                  <div className="mt-4 p-2 text-xs text-gray-500">
-                    Settings like Resolution and Whitelist are auto-optimized
-                    for this version.
-                  </div>
-                )}
-              </div>
-
-              <button
-                onClick={handleStartOCR}
-                className="w-full py-3 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold rounded-lg transition-all shadow-lg"
-              >
-                Start OCR Processing
-              </button>
-            </div>
-          )}
-
-          {/* RESULTS SECTION */}
-          {ocrResult && (
-            <div
-              id="ocr-results"
-              className="mt-6 animate-in fade-in zoom-in duration-300"
-            >
-              <h3 className="text-xl font-bold text-white mb-2">
-                OCR Complete
-              </h3>
-              <p className="mb-4 text-gray-400 text-sm">
-                Text extracted successfully. Copy or download below.
+          {/* Info Panel / Action (Right Column) */}
+          <div className="lg:col-span-1 order-1 lg:order-2">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+                PDF OCR Tool
+              </h2>
+              <p className="text-gray-600 mb-4 text-sm sm:text-base">
+                Extract text from scanned PDF files using optical character
+                recognition.
               </p>
 
-              <div className="relative">
-                <textarea
-                  rows={10}
-                  className="w-full bg-gray-900 border border-gray-600 text-gray-300 rounded-lg p-2.5 font-sans focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                  readOnly
-                  value={ocrResult.text}
-                ></textarea>
-                <button
-                  onClick={copyToClipboard}
-                  className="absolute top-2 right-2 bg-gray-700 hover:bg-gray-600 p-2 rounded-md transition-colors"
-                  title="Copy to Clipboard"
+              {/* Language Selection (Optional) */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Document Language
+                </label>
+                <select
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value)}
+                  className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
                 >
-                  <ClipboardCopy className="w-4 h-4 text-gray-300" />
-                </button>
+                  <option value="eng">English</option>
+                  <option value="ind">Indonesian</option>
+                  {/* Tambahkan bahasa lain sesuai kebutuhan backend */}
+                </select>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                <button
-                  onClick={downloadTextFile}
-                  className="w-full bg-gray-700 text-white font-semibold py-3 rounded-lg hover:bg-gray-600 transition-colors"
-                >
-                  Download as .txt
-                </button>
-                <a
-                  href={ocrResult.pdfUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block w-full"
-                >
-                  <button className="w-full bg-green-600 text-white font-semibold py-3 rounded-lg hover:bg-green-700 transition-colors">
-                    Download Result PDF
-                  </button>
-                </a>
-              </div>
+              <button
+                type="button"
+                onClick={handleOcr}
+                disabled={!selectedFile || isProcessing}
+                className="w-full py-2.5 sm:py-3 px-4 sm:px-6 bg-gray-900 text-white rounded-3xl hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center font-medium text-sm sm:text-base"
+              >
+                {isProcessing ? (
+                  <>
+                    <svg
+                      className="animate-spin -ml-1 mr-2 sm:mr-3 h-4 w-4 sm:h-5 sm:w-5 text-white"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    Start OCR
+                    <svg
+                      className="w-4 h-4 sm:w-5 sm:h-5 ml-2"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M9 5l7 7-7 7"
+                      />
+                    </svg>
+                  </>
+                )}
+              </button>
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* --- FOOTER --- */}
-      <footer className="mt-16 border-t-2 border-gray-700 py-8 bg-gray-900">
-        <div className="container mx-auto px-4 text-center text-gray-400 text-sm">
-          &copy; 2025 BentoPDF. All rights reserved.
-        </div>
-      </footer>
-
-      {/* --- LOADER MODAL --- */}
-      {isLoading && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-gray-800 p-8 rounded-lg flex flex-col items-center gap-4 border border-gray-700 shadow-xl">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-indigo-500 border-opacity-75"></div>
-            <p className="text-white text-lg font-medium">{statusMessage}</p>
-            <p className="text-gray-400 text-xs text-center max-w-xs">
-              Analyzing document structure and recognizing text...
-              <br />
-              This might take a moment.
-            </p>
           </div>
         </div>
-      )}
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-white border-t border-gray-200 mt-8 sm:mt-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3 text-center sm:text-left">
+              <img
+                src="/asset/images/logo-bento.svg"
+                alt="logo"
+                className="w-24 sm:w-30"
+              />
+              <span className="text-gray-500 text-xs sm:text-sm">
+                © 2025 PT. Padepokan Tujuh Sembilan | All rights reserved.
+              </span>
+            </div>
+            <div className="flex flex-wrap justify-center gap-4 sm:gap-6">
+              <Link
+                href="#"
+                className="text-blue-600 hover:text-blue-700 text-xs sm:text-sm font-semibold"
+              >
+                How it works
+              </Link>
+              <Link
+                href="#"
+                className="text-blue-600 hover:text-blue-700 text-xs sm:text-sm font-semibold"
+              >
+                Help Center
+              </Link>
+              <Link
+                href="#"
+                className="text-blue-600 hover:text-blue-700 text-xs sm:text-sm font-semibold"
+              >
+                Contact Us
+              </Link>
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

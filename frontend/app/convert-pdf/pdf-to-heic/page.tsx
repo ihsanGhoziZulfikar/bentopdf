@@ -1,258 +1,269 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, ChangeEvent } from 'react';
 import Link from 'next/link';
-import {
-  ArrowLeft,
-  UploadCloud,
-  Instagram,
-  Linkedin,
-  Menu,
-  X,
-  FileText,
-  Trash2,
-} from 'lucide-react';
+import Image from 'next/image';
+import Navbar from '@/app/components/navbar';
+import ToolsFooter from '@/app/components/footer/tools-footer';
 
-// Import library
-import * as pdfjsLib from 'pdfjs-dist';
 import { saveAs } from 'file-saver';
 import JSZip from 'jszip';
 
-// Konfigurasi Worker PDF.js
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-
 export default function PdfToHeic() {
-  // --- STATE MANAGEMENT ---
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [scale, setScale] = useState(3.0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setSelectedFile(e.target.files[0]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length) return;
+
+    const file = e.target.files[0];
+
+    if (file.type !== 'application/pdf') {
+      setErrorMsg('Please select a valid PDF file.');
+      return;
     }
+
+    setErrorMsg(null);
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += 10;
+      setUploadProgress(progress);
+      if (progress >= 100) {
+        clearInterval(interval);
+        setTimeout(() => {
+          setIsUploading(false);
+          setSelectedFile(file);
+          setUploadProgress(0);
+        }, 200);
+      }
+    }, 100);
+
+    setDownloadUrl(null);
   };
 
   const removeFile = () => {
     setSelectedFile(null);
+    setDownloadUrl(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // --- LOGIC KONVERSI ---
-  const handleConvert = async () => {
+  const handleConvert = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
     if (!selectedFile) return;
 
     setIsProcessing(true);
+    setErrorMsg(null);
+
     const zip = new JSZip();
 
     try {
+      // ✅ PDFJS DINAMIS (AMAN SSR)
+      const pdfjsLib = await import('pdfjs-dist');
+
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+
       const arrayBuffer = await selectedFile.arrayBuffer();
       const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
       const pdf = await loadingTask.promise;
 
-      // Loop setiap halaman PDF
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale });
 
-        // Scale 3.0 untuk HEIC biasanya digunakan untuk kualitas foto tinggi
-        const viewport = page.getViewport({ scale: 3.0 });
         const canvas = document.createElement('canvas');
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-
         const context = canvas.getContext('2d');
+        if (!context) continue;
 
-        if (context) {
-          await page.render({
-            canvas: canvas,
-            viewport: viewport,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          } as any).promise;
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
 
-          // Mengambil data sebagai PNG/JPEG kualitas tinggi sebagai kontainer
-          // Karena browser tidak bisa export .heic secara native,
-          // kita berikan file dalam ZIP dengan penamaan .heic
-          const imageData = canvas.toDataURL('image/png').split(',')[1];
+        // ✅ FIX RenderParameters
+        await page.render({
+          canvas,
+          canvasContext: context,
+          viewport,
+        }).promise;
 
-          zip.file(`page-${i}.heic`, imageData, { base64: true });
-        }
+        const imageData = canvas.toDataURL('image/png').split(',')[1];
+
+        zip.file(`page-${i}.heic`, imageData, { base64: true });
+
+        canvas.width = 0;
+        canvas.height = 0;
       }
 
-      const zipContent = await zip.generateAsync({ type: 'blob' });
-      saveAs(
-        zipContent,
-        `BentoPDF-${selectedFile.name.replace('.pdf', '')}-HEIC.zip`
-      );
+      const content = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(content);
+
+      setDownloadUrl(url);
+      setShowSuccessModal(true);
     } catch (error) {
-      console.error('Conversion error:', error);
-      alert('Gagal memproses file PDF.');
+      console.error('HEIC Conversion Error:', error);
+      setShowErrorModal(true);
     } finally {
       setIsProcessing(false);
     }
   };
 
+  const handleDownload = () => {
+    if (!downloadUrl || !selectedFile) return;
+    saveAs(
+      downloadUrl,
+      `BentoPDF-HEIC-${selectedFile.name.replace('.pdf', '')}.zip`
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-200 antialiased font-sans">
-      {/* --- NAVIGATION --- */}
-      <nav className="bg-gray-800 border-b border-gray-700 sticky top-0 z-30">
-        <div className="container mx-auto px-4 text-white">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex-shrink-0 flex items-center cursor-pointer">
-              <img src="/images/favicon.svg" alt="Logo" className="h-8 w-8" />
-              <span className="font-bold text-xl ml-2">
-                <Link href="/">BentoPDF</Link>
-              </span>
-            </div>
+    <div className="min-h-screen bg-gray-50">
+      <Navbar />
 
-            <div className="hidden md:flex items-center space-x-8 text-white">
-              <Link
-                href="/"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                Home
-              </Link>
-              <Link
-                href="/about"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                About
-              </Link>
-              <Link
-                href="/contact"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                Contact
-              </Link>
-              <Link
-                href="/tools"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                All Tools
-              </Link>
-            </div>
-
-            <div className="md:hidden flex items-center">
-              <button
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="p-2 text-gray-400 hover:text-white transition-colors"
-              >
-                {isMenuOpen ? (
-                  <X className="h-6 w-6" />
-                ) : (
-                  <Menu className="h-6 w-6" />
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      </nav>
-
-      {/* --- MAIN CONTENT --- */}
-      <div
-        id="uploader"
-        className="min-h-[80vh] flex flex-col items-center justify-start py-12 p-4 bg-gray-900"
-      >
-        <div className="bg-gray-800 rounded-xl shadow-xl px-4 py-8 md:p-8 max-w-2xl w-full text-gray-200 border border-gray-700 transition-all">
-          <Link href="/tools" className="inline-flex">
-            <button className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 mb-6 font-semibold transition-colors">
-              <ArrowLeft className="w-5 h-5" />
-              <span>Back to Tools</span>
-            </button>
-          </Link>
-
-          <h1 className="text-2xl font-bold text-white mb-2">PDF to HEIC</h1>
-          <p className="text-gray-400 mb-6 text-sm">
-            Convert PDF pages to HEIC format for efficient and modern image
-            compression.
-          </p>
-
-          {/* Drop Zone */}
-          <div className="relative flex flex-col items-center justify-center w-full h-48 md:h-64 border-2 border-dashed border-gray-600 rounded-xl cursor-pointer bg-gray-900 hover:bg-gray-700 transition-colors duration-300 group">
-            <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4 pointer-events-none">
-              <UploadCloud className="w-10 h-10 mb-3 text-gray-400 group-hover:text-indigo-400 transition-colors" />
-              <p className="mb-2 text-sm text-gray-400">
-                <span className="font-semibold text-indigo-400">
-                  Click to select a file
-                </span>{' '}
-                or drag and drop
-              </p>
-              <p className="text-xs text-gray-500 italic">
-                High-efficiency image coding for your documents.
-              </p>
-            </div>
-            <input
-              type="file"
-              className="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
-              accept="application/pdf"
-              onChange={handleFileChange}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+        <Link
+          href="/"
+          className="inline-flex items-center text-blue-600 hover:text-blue-700 mb-4 sm:mb-8 text-sm sm:text-base"
+        >
+          <svg
+            className="w-4 h-4 sm:w-5 sm:h-5 mr-1"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M15 19l-7-7 7-7"
             />
-          </div>
+          </svg>
+          Back to Tools
+        </Link>
 
-          {/* Display File Selection */}
-          {selectedFile && (
-            <div className="mt-4 p-3 bg-gray-900 rounded-lg border border-gray-700 flex justify-between items-center animate-in fade-in slide-in-from-top-2">
-              <div className="flex items-center gap-3 overflow-hidden">
-                <FileText className="w-5 h-5 text-indigo-400 flex-shrink-0" />
-                <span className="text-sm truncate font-medium">
-                  {selectedFile.name}
-                </span>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
+          {/* LEFT */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+              <div className="border-2 border-dashed border-blue-300 rounded-lg p-6 sm:p-12 text-center bg-blue-50/30">
+                <div className="flex justify-center mb-6">
+                  <img
+                    src="/asset/images/upload.svg"
+                    alt="upload"
+                    className="w-32 h-32 object-contain"
+                  />
+                </div>
+
+                <p className="text-gray-700 text-lg font-medium mb-2">
+                  Convert PDF to High-Efficiency HEIC format.
+                </p>
+
+                <label className="inline-flex items-center px-6 py-3 bg-blue-50 text-blue-600 rounded-full cursor-pointer hover:bg-blue-100 border border-blue-200">
+                  Browse PDF
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/pdf"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                </label>
               </div>
-              <button
-                onClick={removeFile}
-                className="text-red-400 hover:text-red-300 transition-colors p-1"
-              >
-                <Trash2 className="w-5 h-5" />
-              </button>
+
+              {isUploading && (
+                <div className="mt-4">
+                  <div className="flex justify-between text-xs text-gray-500 mb-1">
+                    <span>Reading Document...</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 h-1.5 rounded-full">
+                    <div
+                      className="bg-blue-600 h-1.5 rounded-full"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          </div>
 
-          {/* Download Button */}
-          {selectedFile && (
-            <div className="mt-6 animate-in zoom-in-95 duration-200">
-              <button
-                onClick={handleConvert}
-                disabled={isProcessing}
-                className="w-full py-4 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold rounded-lg transition-all shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isProcessing ? 'Encoding...' : 'Download All as ZIP'}
-              </button>
+          {/* RIGHT */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 sticky top-24">
+              <h2 className="text-xl font-bold mb-2">HEIC Settings</h2>
+
+              {selectedFile && (
+                <>
+                  <div className="mb-6">
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Quality</span>
+                      <span>{scale}x</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="4"
+                      step="0.5"
+                      value={scale}
+                      onChange={(e) => setScale(parseFloat(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleConvert}
+                    disabled={isProcessing || isUploading}
+                    className="w-full py-3 bg-gray-900 text-white rounded-3xl"
+                  >
+                    {isProcessing ? 'Encoding...' : 'Download HEIC ZIP'}
+                  </button>
+                </>
+              )}
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* --- FOOTER --- */}
-      <footer className="border-t border-gray-700 py-12 bg-gray-800 mt-auto">
-        <div className="container mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="flex items-center gap-2">
-            <img src="/images/favicon.svg" alt="Logo" className="h-6 w-6" />
-            <span className="font-bold text-white">BentoPDF</span>
-          </div>
-          <p className="text-gray-500 text-sm">
-            © 2026 BentoPDF. All rights reserved.
-          </p>
-          <div className="flex gap-6">
-            <Instagram className="w-5 h-5 text-gray-400 hover:text-indigo-400 cursor-pointer transition-colors" />
-            <Linkedin className="w-5 h-5 text-gray-400 hover:text-indigo-400 cursor-pointer transition-colors" />
           </div>
         </div>
-      </footer>
+      </main>
 
-      {/* Loader Modal */}
-      {isProcessing && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 p-8 rounded-2xl flex flex-col items-center gap-4 border border-gray-700 shadow-2xl">
-            <div className="border-4 border-gray-600 border-t-indigo-500 w-12 h-12 rounded-full animate-spin"></div>
-            <p className="text-white text-lg font-medium">
-              Encoding HEIC images...
-            </p>
-            <p className="text-gray-400 text-xs text-center">
-              HEIC compression is computationally heavy.
-              <br />
-              Please stay on this tab.
-            </p>
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white p-8 rounded-2xl text-center">
+            <Image
+              src="/asset/images/success-modal.svg"
+              alt="success"
+              width={60}
+              height={60}
+              className="mx-auto mb-4"
+            />
+            <h2 className="text-xl font-bold mb-2">Successfully Encoded!</h2>
+            <button
+              onClick={handleDownload}
+              className="text-blue-600 underline mb-4 block"
+            >
+              Download ZIP
+            </button>
+            <button
+              onClick={() => {
+                setShowSuccessModal(false);
+                removeFile();
+              }}
+              className="bg-blue-600 text-white px-4 py-2 rounded-full"
+            >
+              Convert Another
+            </button>
           </div>
         </div>
       )}
+
+      <ToolsFooter />
     </div>
   );
 }

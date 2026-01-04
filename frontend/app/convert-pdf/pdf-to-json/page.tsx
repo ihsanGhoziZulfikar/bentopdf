@@ -1,60 +1,80 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, ChangeEvent } from 'react';
 import Link from 'next/link';
-import {
-  ArrowLeft,
-  UploadCloud,
-  Instagram,
-  Linkedin,
-  Menu,
-  X,
-  FileText,
-  Trash2,
-  Loader2,
-  Download,
-} from 'lucide-react';
+import Image from 'next/image';
+import Navbar from '@/app/components/navbar';
+import ToolsFooter from '@/app/components/footer/tools-footer';
 
-// Library pendukung
+// --- LIBRARY IMPORTS ---
 import * as pdfjsLib from 'pdfjs-dist';
 import { saveAs } from 'file-saver';
 import JSZip from 'jszip';
 
-// Setup Worker (Menggunakan Unpkg agar stabil di Client-Side)
+// Setup Worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 export default function PdfToJson() {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [files, setFiles] = useState<File[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [status, setStatus] = useState<{
-    type: 'success' | 'error' | '';
-    message: string;
-  }>({ type: '', message: '' });
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const newFiles = Array.from(e.target.files);
-      setFiles((prev) => [...prev, ...newFiles]);
-      setStatus({ type: '', message: '' }); // Reset status
+      const newFiles = Array.from(e.target.files).filter(
+        (file) => file.type === 'application/pdf'
+      );
+
+      if (newFiles.length === 0) {
+        setErrorMsg('Please select valid PDF files.');
+        return;
+      }
+
+      setErrorMsg(null);
+      setIsUploading(true);
+      setUploadProgress(0);
+
+      // Simulasi progress bar
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += 10;
+        setUploadProgress(progress);
+        if (progress >= 100) {
+          clearInterval(interval);
+          setTimeout(() => {
+            setIsUploading(false);
+            setSelectedFiles((prev) => [...prev, ...newFiles]);
+            setUploadProgress(0);
+          }, 200);
+        }
+      }, 100);
+
+      setDownloadUrl(null);
     }
   };
 
   const removeFile = (index: number) => {
-    setFiles(files.filter((_, i) => i !== index));
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+    if (selectedFiles.length <= 1) setDownloadUrl(null);
   };
 
-  // --- LOGIC KONVERSI ---
-  const handleConvert = async () => {
-    if (files.length === 0) return;
+  const handleConvert = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    if (selectedFiles.length === 0) return;
 
     setIsProcessing(true);
-    setStatus({ type: '', message: 'Processing your files...' });
-
+    setErrorMsg(null);
     const zip = new JSZip();
 
     try {
-      for (const file of files) {
+      for (const file of selectedFiles) {
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -77,187 +97,243 @@ export default function PdfToJson() {
           pdfData.pages.push({ pageNumber: i, content: items });
         }
 
-        // Tambahkan file JSON ke dalam ZIP
         const jsonString = JSON.stringify(pdfData, null, 2);
         zip.file(`${file.name.replace('.pdf', '')}.json`, jsonString);
       }
 
-      // Generate ZIP dan Download
       const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, 'BentoPDF_Converted_JSON.zip');
+      const url = URL.createObjectURL(content);
 
-      setStatus({ type: 'success', message: 'Success! All files converted.' });
-      setFiles([]); // Opsional: bersihkan list file setelah sukses
-    } catch (error) {
-      console.error(error);
-      setStatus({
-        type: 'error',
-        message: 'Failed to convert files. Check console for details.',
-      });
-    } finally {
+      setDownloadUrl(url);
       setIsProcessing(false);
+      setShowSuccessModal(true);
+    } catch (error) {
+      console.error('JSON Conversion Error:', error);
+      setIsProcessing(false);
+      setShowErrorModal(true);
+    }
+  };
+
+  const handleDownload = () => {
+    if (downloadUrl) {
+      saveAs(downloadUrl, `BentoPDF_JSON_Export.zip`);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-200 antialiased font-sans">
-      {/* --- NAVIGATION (Sama seperti punya Anda) --- */}
-      <nav className="bg-gray-800 border-b border-gray-700 sticky top-0 z-30">
-        <div className="container mx-auto px-4">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex-shrink-0 flex items-center cursor-pointer">
-              <img
-                src="/images/favicon.svg"
-                alt="Bento PDF Logo"
-                className="h-8 w-8"
-              />
-              <span className="text-white font-bold text-xl ml-2">
-                <Link href="/">BentoPDF</Link>
-              </span>
+    <div className="min-h-screen bg-gray-50 text-gray-900">
+      <Navbar />
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+        <Link
+          href="/"
+          className="inline-flex items-center text-blue-600 hover:text-blue-700 mb-4 sm:mb-8 text-sm sm:text-base"
+        >
+          <svg
+            className="w-4 h-4 sm:w-5 sm:h-5 mr-1"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M15 19l-7-7 7-7"
+            />
+          </svg>
+          Back to Tools
+        </Link>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
+          <div className="lg:col-span-2 order-1">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+              <div className="border-2 border-dashed border-blue-300 rounded-lg p-6 sm:p-12 text-center bg-blue-50/30">
+                <div className="flex justify-center mb-4">
+                  <div className="relative w-24 h-24 sm:w-32 sm:h-32">
+                    <img
+                      src="/asset/images/upload.svg"
+                      alt="upload"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                </div>
+                <p className="text-gray-700 text-base sm:text-lg font-medium mb-2">
+                  Extract text and structure to JSON format.
+                </p>
+                <label className="inline-flex items-center px-6 py-3 bg-blue-50 text-blue-600 rounded-full cursor-pointer hover:bg-blue-100 transition-colors border border-blue-200 mt-4 font-semibold">
+                  Browse PDF Files
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/pdf"
+                    multiple
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              {isUploading && (
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="w-full bg-gray-200 rounded-full h-1.5">
+                    <div
+                      className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    ></div>
+                  </div>
+                </div>
+              )}
+
+              {selectedFiles.length > 0 && (
+                <div className="mt-4 space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                  {selectedFiles.map((file, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 bg-gray-50 rounded-lg border border-gray-200 flex justify-between items-center animate-in fade-in"
+                    >
+                      <div className="flex items-center space-x-3 truncate">
+                        <svg
+                          className="w-6 h-6 text-red-500"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
+                        </svg>
+                        <span className="text-sm font-medium truncate">
+                          {file.name}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => removeFile(idx)}
+                        className="text-red-500 hover:bg-red-50 p-1 rounded"
+                      >
+                        <svg
+                          className="w-5 h-5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2"
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            {/* Desktop Menu */}
-            <div className="hidden md:flex items-center space-x-8 text-white">
-              <Link href="/" className="hover:text-indigo-400">
-                Home
-              </Link>
-              <Link href="/about" className="hover:text-indigo-400">
-                About
-              </Link>
-              <Link href="/contact" className="hover:text-indigo-400">
-                Contact
-              </Link>
-              <Link href="/tools" className="hover:text-indigo-400">
-                All Tools
-              </Link>
-            </div>
-            {/* Mobile Button */}
-            <div className="md:hidden flex items-center">
+          </div>
+
+          <div className="lg:col-span-1 order-2">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 sticky top-24">
+              <h2 className="text-xl font-bold mb-2">Convert to Data</h2>
+              <p className="text-gray-600 mb-6 text-sm">
+                Perfect for developers. This tool extracts text, coordinates,
+                and metadata into a structured JSON file.
+              </p>
+
               <button
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="p-2 text-gray-400 hover:text-white"
+                onClick={handleConvert}
+                disabled={
+                  selectedFiles.length === 0 || isProcessing || isUploading
+                }
+                className="w-full py-3 px-4 bg-gray-900 text-white rounded-3xl hover:bg-gray-800 disabled:bg-gray-300 transition-all font-semibold flex items-center justify-center gap-2"
               >
-                {isMenuOpen ? (
-                  <X className="h-6 w-6" />
+                {isProcessing ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>{' '}
+                    Extracting...
+                  </>
                 ) : (
-                  <Menu className="h-6 w-6" />
+                  <>
+                    Convert to JSON{' '}
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+                      />
+                    </svg>
+                  </>
                 )}
               </button>
             </div>
           </div>
         </div>
-      </nav>
+      </main>
 
-      {/* --- MAIN CONTENT --- */}
-      <div className="min-h-screen flex items-center justify-center p-4 bg-gray-900">
-        <div className="bg-gray-800 rounded-xl shadow-xl p-8 max-w-2xl w-full text-gray-200 border border-gray-700">
-          <Link href="/tools" className="inline-flex">
-            <button className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 mb-6 font-semibold transition-colors">
-              <ArrowLeft className="w-5 h-5" />
-              <span>Back to Tools</span>
-            </button>
-          </Link>
-
-          <h1 className="text-2xl font-bold text-white mb-2">
-            PDF to JSON Converter
-          </h1>
-          <p className="text-gray-400 mb-6">
-            Upload multiple PDF files to convert them all to JSON format. Files
-            will be downloaded as a ZIP archive.
-          </p>
-
-          <div className="upload-section mb-6">
-            {/* Drop Zone */}
-            <div className="relative flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-600 rounded-xl cursor-pointer bg-gray-700 hover:bg-gray-600 transition-colors group">
-              <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
-                <UploadCloud className="w-10 h-10 mb-3 text-gray-400 group-hover:text-indigo-400" />
-                <p className="mb-2 text-sm text-gray-300">
-                  <span className="font-semibold">Click to select files</span>{' '}
-                  or drag and drop
-                </p>
-                <p className="text-xs text-gray-500 italic">
-                  Your files never leave your device (Pure Client-Side).
-                </p>
-              </div>
-              <input
-                type="file"
-                id="pdfFiles"
-                accept="application/pdf"
-                multiple
-                className="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
-                onChange={handleFileChange}
-                disabled={isProcessing}
-              />
-            </div>
-
-            {/* File List */}
-            {files.length > 0 && (
-              <div className="mt-4 space-y-2">
-                <p className="text-sm text-gray-400 mb-2 font-medium">
-                  Selected Files ({files.length}):
-                </p>
-                <div className="max-h-40 overflow-y-auto pr-2 custom-scrollbar space-y-2">
-                  {files.map((file, index) => (
-                    <div
-                      key={`${file.name}-${index}`}
-                      className="flex justify-between items-center bg-gray-900 p-2 rounded border border-gray-600"
-                    >
-                      <div className="flex items-center gap-2 overflow-hidden">
-                        <FileText className="w-4 h-4 text-indigo-400 flex-shrink-0" />
-                        <span className="text-sm truncate text-gray-300">
-                          {file.name}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => removeFile(index)}
-                        className="text-red-400 hover:text-red-300 p-1"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Status Message */}
-            {status.message && (
-              <div
-                className={`mt-4 p-3 rounded-lg text-sm ${status.type === 'error' ? 'bg-red-900/30 text-red-400 border border-red-800' : 'bg-indigo-900/30 text-indigo-400 border border-indigo-800'}`}
-              >
-                {status.message}
-              </div>
-            )}
-
-            {/* Convert Button */}
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+            <Image
+              src="/asset/images/success-modal.svg"
+              alt="success"
+              width={60}
+              height={60}
+              className="mx-auto mb-4"
+            />
+            <h2 className="text-2xl font-bold mb-2">Extraction Complete!</h2>
+            <p className="text-gray-600 mb-6 text-sm">
+              JSON data has been successfully generated for all files.
+            </p>
             <button
-              onClick={handleConvert}
-              disabled={files.length === 0 || isProcessing}
-              className={`w-full mt-6 py-3 px-4 font-bold rounded-lg transition-all shadow-lg flex items-center justify-center gap-2 ${
-                files.length === 0 || isProcessing
-                  ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white'
-              }`}
+              onClick={handleDownload}
+              className="text-blue-600 font-semibold hover:underline mb-6 block w-full text-sm"
             >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Converting...</span>
-                </>
-              ) : (
-                <>
-                  <Download className="w-5 h-5" />
-                  <span>Convert to JSON</span>
-                </>
-              )}
+              Download ZIP manually
+            </button>
+            <button
+              onClick={() => {
+                setShowSuccessModal(false);
+                setSelectedFiles([]);
+              }}
+              className="w-full bg-blue-600 text-white font-semibold py-3 rounded-full hover:bg-blue-700 transition-colors"
+            >
+              Finish
             </button>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* --- FOOTER (Sama seperti punya Anda) --- */}
-      <footer className="mt-16 border-t-2 border-gray-700 py-8 bg-gray-900">
-        {/* ... (Footer content dari kode Anda) ... */}
-      </footer>
+      {/* Error Modal */}
+      {showErrorModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+            <Image
+              src="/asset/images/failed-modal.svg"
+              alt="failed"
+              width={60}
+              height={60}
+              className="mx-auto mb-4"
+            />
+            <h2 className="text-2xl font-bold mb-2">Oops! Failed</h2>
+            <p className="text-gray-600 mb-6">
+              We couldn't parse the PDF text content. Please ensure the file
+              isn't corrupted or encrypted.
+            </p>
+            <button
+              onClick={() => setShowErrorModal(false)}
+              className="w-full bg-blue-600 text-white font-semibold py-3 rounded-full hover:bg-blue-700"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      )}
+
+      <ToolsFooter />
     </div>
   );
 }

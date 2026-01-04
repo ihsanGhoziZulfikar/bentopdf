@@ -160,14 +160,6 @@ export default function MergePDF() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-
-      // --- KODE LAMA DI BAWAH INI DIHAPUS SAJA ---
-      /* const fileResponse = await fetch(pdfUrl);
-      if (!fileResponse.ok) throw new Error('Failed to download...');
-      const blob = await fileResponse.blob();
-      const url = window.URL.createObjectURL(blob);
-      ...
-      */
     } catch (error) {
       console.error('Frontend Error:', error);
       let message = 'Failed to connect to server or merge files.';
