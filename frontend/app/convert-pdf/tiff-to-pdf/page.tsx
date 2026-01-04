@@ -1,535 +1,238 @@
 'use client';
 
-import React, { useState, useRef, ChangeEvent } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import Navbar from '@/app/components/navbar';
-import ToolsFooter from '../../components/footer/tools-footer';
+import ToolsFooter from '@/app/components/footer/tools-footer';
 import Image from 'next/image';
 
+// --- IMPORT LIBRARIES ---
+import UTIF from 'utif';
+import { jsPDF } from 'jspdf';
+
 export default function TiffToPdf() {
-  // --- STATE MANAGEMENT ---
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [quality, setQuality] = useState('medium');
+  const [compression, setCompression] = useState('medium');
   const [isProcessing, setIsProcessing] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [uploadingFiles, setUploadingFiles] = useState<
-    { name: string; size: number; progress: number }[]
-  >([]);
+  const [uploadingFiles, setUploadingFiles] = useState<{ name: string; size: number; progress: number }[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- HANDLERS ---
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const newFiles = Array.from(e.target.files);
-
-      // VALIDASI: Filter khusus TIFF
       const tiffFiles = newFiles.filter(
-        (f) =>
-          f.type === 'image/tiff' ||
-          f.name.toLowerCase().endsWith('.tiff') ||
-          f.name.toLowerCase().endsWith('.tif')
+        (f) => f.type === 'image/tiff' || f.name.toLowerCase().endsWith('.tiff') || f.name.toLowerCase().endsWith('.tif')
       );
 
-      if (tiffFiles.length !== newFiles.length) {
-        setErrorMsg(
-          'Some files were skipped because they are not TIFF images.'
-        );
-      } else {
-        setErrorMsg(null);
-      }
+      if (tiffFiles.length !== newFiles.length) setErrorMsg('Some files were skipped because they are not TIFF images.');
+      else setErrorMsg(null);
 
       if (tiffFiles.length === 0) return;
 
       setIsUploading(true);
-
-      const uploadFiles = tiffFiles.map((f) => ({
-        name: f.name,
-        size: f.size,
-        progress: 0,
-      }));
-
+      const uploadFiles = tiffFiles.map((f) => ({ name: f.name, size: f.size, progress: 0 }));
       setUploadingFiles(uploadFiles);
 
-      // Simulasi Upload Progress
       tiffFiles.forEach((file, index) => {
         let progress = 0;
         const interval = setInterval(() => {
-          progress += 10;
+          progress += 25;
           setUploadingFiles((prev) => {
             const updated = [...prev];
             if (updated[index]) updated[index].progress = progress;
             return updated;
           });
-
           if (progress >= 100) {
             clearInterval(interval);
-            setTimeout(() => {
-              if (index === tiffFiles.length - 1) {
+            if (index === tiffFiles.length - 1) {
+              setTimeout(() => {
                 setIsUploading(false);
                 setSelectedFiles((prev) => [...prev, ...tiffFiles]);
                 setUploadingFiles([]);
-              }
-            }, 200);
+              }, 300);
+            }
           }
         }, 100);
       });
-
-      setDownloadUrl(null);
-    }
-  };
-
-  const removeFile = (index: number) => {
-    setSelectedFiles(selectedFiles.filter((_, i) => i !== index));
-  };
-
-  const moveFile = (index: number, direction: 'up' | 'down') => {
-    const newFiles = [...selectedFiles];
-    const newIndex = direction === 'up' ? index - 1 : index + 1;
-    if (newIndex >= 0 && newIndex < selectedFiles.length) {
-      [newFiles[index], newFiles[newIndex]] = [
-        newFiles[newIndex],
-        newFiles[index],
-      ];
-      setSelectedFiles(newFiles);
     }
   };
 
   const handleConvert = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-
-    if (selectedFiles.length === 0) {
-      setErrorMsg('Please select at least 1 TIFF file to convert.');
-      return;
-    }
+    if (selectedFiles.length === 0) return;
 
     setIsProcessing(true);
     setErrorMsg(null);
 
-    // Simulasi proses konversi
-    setTimeout(() => {
-      setIsProcessing(false);
+    try {
+      const pdf = new jsPDF({ orientation: 'p', unit: 'px', format: 'a4' });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      let isFirstPage = true;
 
-      const isSuccess = Math.random() > 0.1; // 90% success rate
+      for (const file of selectedFiles) {
+        const arrayBuffer = await file.arrayBuffer();
+        const ifds = UTIF.decode(arrayBuffer); 
+        
+        for (let i = 0; i < ifds.length; i++) {
+          UTIF.decodeImage(arrayBuffer, ifds[i]); 
+          const rgba = UTIF.toRGBA8(ifds[i]); 
+          
+          // --- FIX: VALIDATE DIMENSIONS ---
+          const w = ifds[i].width;
+          const h = ifds[i].height;
 
-      if (isSuccess) {
-        setDownloadUrl('#download-url');
-        setShowSuccessModal(true);
-      } else {
-        setShowErrorModal(true);
+          if (!w || !h || w <= 0 || h <= 0) {
+            console.warn(`Skipping frame ${i} of ${file.name}: Invalid dimensions.`);
+            continue;
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) continue;
+
+          const imgData = ctx.createImageData(w, h);
+          imgData.data.set(rgba);
+          ctx.putImageData(imgData, 0, 0);
+
+          const qualityValue = compression === 'high' ? 1.0 : compression === 'medium' ? 0.7 : 0.4;
+          const jpegUrl = canvas.toDataURL('image/jpeg', qualityValue);
+
+          // Calculate fit-to-page ratio
+          const ratio = Math.min(pageWidth / w, pageHeight / h);
+          const imgWidth = w * ratio;
+          const imgHeight = h * ratio;
+          const xOffset = (pageWidth - imgWidth) / 2;
+          const yOffset = (pageHeight - imgHeight) / 2;
+
+          if (!isFirstPage) {
+            // Add page with orientation detection
+            pdf.addPage([pageWidth, pageHeight], w > h ? 'l' : 'p');
+          } else {
+            isFirstPage = false;
+          }
+
+          pdf.addImage(jpegUrl, 'JPEG', xOffset, yOffset, imgWidth, imgHeight);
+          
+          // Cleanup canvas memory
+          canvas.width = 0;
+          canvas.height = 0;
+        }
       }
-    }, 2500);
-  };
 
-  const handleTryAgain = () => {
-    setShowErrorModal(false);
-    setErrorMsg(null);
-  };
-
-  const handleNext = () => {
-    setShowSuccessModal(false);
-    setDownloadUrl(null);
-    setSelectedFiles([]);
+      const pdfBlob = pdf.output('blob');
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      setDownloadUrl(pdfUrl);
+      setShowSuccessModal(true);
+    } catch (err) {
+      console.error('TIFF Conversion Error:', err);
+      setShowErrorModal(true);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleDownload = () => {
-    alert('Downloading PDF...');
+    if (downloadUrl) {
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = 'BentoPDF_Converted_TIFF.pdf';
+      link.click();
+    }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
+  const removeFile = (index: number) => setSelectedFiles(selectedFiles.filter((_, i) => i !== index));
+  const handleNext = () => { setShowSuccessModal(false); setSelectedFiles([]); setDownloadUrl(null); };
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
-        <Link
-          href="/"
-          className="inline-flex items-center text-blue-600 hover:text-blue-700 mb-4 sm:mb-8 text-sm sm:text-base"
-        >
-          <svg
-            className="w-4 h-4 sm:w-5 sm:h-5 mr-1"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
+  if (!mounted) return null;
+
+  return (
+    <div className="min-h-screen bg-gray-50 font-sans">
+      <Navbar />
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        <Link href="/" className="inline-flex items-center text-blue-600 mb-8 font-semibold hover:underline">
+          <svg className="w-5 h-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M15 19l-7-7 7-7" /></svg>
           Back to Tools
         </Link>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
-          {/* Left Column: Upload Area */}
-          <div className="lg:col-span-2 order-1 lg:order-1">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-              {/* Drop Zone */}
-              <div className="border-2 border-dashed border-blue-300 rounded-lg p-6 sm:p-12 text-center bg-blue-50/30">
-                <div className="flex justify-center mb-4 sm:mb-6">
-                  <div className="relative w-24 h-24 sm:w-32 sm:h-32">
-                    <img
-                      src="/asset/images/upload.svg"
-                      alt="upload"
-                      className="w-full h-full object-contain"
-                    />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+              {selectedFiles.length === 0 ? (
+                <div className="border-2 border-dashed border-blue-200 rounded-2xl p-12 text-center bg-blue-50/30 hover:bg-blue-50/50 transition-all cursor-pointer">
+                   <div className="flex justify-center mb-6">
+                    <Image src="/asset/images/upload.svg" alt="upload" width={80} height={80} />
                   </div>
+                  <p className="text-gray-700 text-xl font-bold mb-4">Upload TIFF files to convert</p>
+                  <label className="px-10 py-4 bg-blue-600 text-white rounded-full cursor-pointer font-bold hover:bg-blue-700 shadow-lg inline-block">
+                    Select Files
+                    <input ref={fileInputRef} type="file" multiple accept=".tiff, .tif" onChange={handleFileChange} className="hidden" />
+                  </label>
                 </div>
-                <p className="text-gray-700 text-base sm:text-lg font-medium mb-2 px-2">
-                  Drag and drop your TIFF files here to start.
-                </p>
-                <p className="text-gray-500 mb-4 sm:mb-6 text-sm sm:text-base">
-                  or
-                </p>
-                <label className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-3 bg-blue-50 text-blue-600 rounded-full cursor-pointer hover:bg-blue-100 transition-colors border border-blue-200 text-sm sm:text-base">
-                  <svg
-                    className="w-4 h-4 sm:w-5 sm:h-5 mr-2"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                    />
-                  </svg>
-                  Browse Files
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept=".tiff, .tif, image/tiff"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                </label>
-                <div className="mt-4 sm:mt-6 flex items-center justify-center text-xs sm:text-sm text-blue-600 px-2">
-                  <svg
-                    className="w-3 h-3 sm:w-4 sm:h-4 mr-1 flex-shrink-0"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  Supported formats: TIFF, TIF
-                </div>
-              </div>
-
-              {errorMsg && (
-                <div className="mt-4 p-3 sm:p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs sm:text-sm">
-                  {errorMsg}
-                </div>
-              )}
-
-              {/* Uploading Progress */}
-              {isUploading && uploadingFiles.length > 0 && (
-                <div className="mt-4 space-y-3">
-                  {uploadingFiles.map((file, index) => (
-                    <div
-                      key={`uploading-${index}`}
-                      className="p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
-                          <svg
-                            className="w-6 h-6 sm:w-8 sm:h-8 text-blue-500 flex-shrink-0"
-                            fill="currentColor"
-                            viewBox="0 0 20 20"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-gray-900 truncate font-medium text-sm sm:text-base">
-                              {file.name}
-                            </p>
-                            <p className="text-gray-500 text-xs sm:text-sm">
-                              {(file.size / (1024 * 1024)).toFixed(2)} MB
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${file.progress}%` }}
-                        ></div>
-                      </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+                  {selectedFiles.map((file, idx) => (
+                    <div key={idx} className="relative p-4 bg-gray-50 rounded-xl border-2 border-transparent hover:border-blue-400 group transition-all">
+                      <div className="aspect-square bg-blue-100 rounded-lg flex items-center justify-center text-blue-700 font-black text-lg">TIFF</div>
+                      <p className="text-xs mt-3 truncate font-bold text-gray-700">{file.name}</p>
+                      <button onClick={() => removeFile(idx)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
                     </div>
                   ))}
-                </div>
-              )}
-
-              {/* File List Grid */}
-              {!isUploading && selectedFiles.length > 0 && (
-                <div className="mt-4">
-                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3">
-                    Selected TIFF Files ({selectedFiles.length})
-                  </h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                    {selectedFiles.map((file, index) => (
-                      <div
-                        key={`file-${index}`}
-                        className="relative group bg-gray-50 rounded-lg border border-gray-200 p-3 hover:border-blue-300 transition-colors"
-                      >
-                        <div className="aspect-square bg-gray-200 rounded mb-2 flex items-center justify-center overflow-hidden">
-                          <svg
-                            className="w-12 h-12 text-blue-400"
-                            fill="currentColor"
-                            viewBox="0 0 20 20"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        </div>
-                        <p className="text-xs text-gray-900 truncate font-medium mb-1">
-                          {file.name}
-                        </p>
-                        <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => moveFile(index, 'up')}
-                            disabled={index === 0}
-                            className="p-1 bg-white rounded shadow-sm text-gray-600 hover:text-blue-600 disabled:opacity-30"
-                          >
-                            <svg
-                              className="w-3 h-3"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth="2"
-                                d="M5 15l7-7 7 7"
-                              />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => removeFile(index)}
-                            className="p-1 bg-white rounded shadow-sm text-red-500 hover:text-red-700"
-                          >
-                            <svg
-                              className="w-3 h-3"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth="2"
-                                d="M6 18L18 6M6 6l12 12"
-                              />
-                            </svg>
-                          </button>
-                        </div>
-                        <div className="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1.5 py-0.5 rounded">
-                          {index + 1}
-                        </div>
-                      </div>
-                    ))}
-                    <label className="aspect-square border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 hover:bg-blue-50/30 transition-colors flex flex-col items-center justify-center p-3">
-                      <svg
-                        className="w-8 h-8 text-gray-400 mb-1"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth="2"
-                          d="M12 4v16m8-8H4"
-                        />
-                      </svg>
-                      <span className="text-xs text-gray-600 font-medium">
-                        Add more
-                      </span>
-                      <input
-                        type="file"
-                        multiple
-                        accept=".tiff, .tif"
-                        onChange={handleFileChange}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Right Column: Sidebar */}
-          <div className="lg:col-span-1 order-1 lg:order-2">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-                TIFF to PDF
-              </h2>
-              <p className="text-gray-600 mb-4 sm:mb-6 text-sm sm:text-base">
-                Convert your high-quality TIFF images into a professional PDF
-                document.
-              </p>
-
-              {selectedFiles.length > 0 && !isUploading && (
-                <div className="mb-4 sm:mb-6">
-                  <label
-                    htmlFor="quality"
-                    className="block mb-2 text-sm font-medium text-gray-700"
-                  >
-                    PDF Compression
-                  </label>
-                  <select
-                    id="quality"
-                    value={quality}
-                    onChange={(e) => setQuality(e.target.value)}
-                    className="w-full bg-white border border-gray-300 text-gray-900 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 text-sm"
-                  >
-                    <option value="high">No Compression (Best Quality)</option>
-                    <option value="medium">Balanced (Standard)</option>
-                    <option value="low">Small File Size</option>
-                  </select>
-                </div>
-              )}
-
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-8 sticky top-6">
+              <h2 className="text-2xl font-black mb-4 text-gray-900">Conversion Settings</h2>
+              <div className="mb-8">
+                <label className="block text-sm font-bold text-gray-600 mb-3">Compression Level</label>
+                <select value={compression} onChange={(e) => setCompression(e.target.value)} className="w-full p-4 bg-gray-50 border-2 border-gray-100 rounded-xl text-sm font-bold focus:border-blue-500 outline-none transition-all">
+                  <option value="high">HD Quality (No Compression)</option>
+                  <option value="medium">Standard (Balanced)</option>
+                  <option value="low">Small File (High Compression)</option>
+                </select>
+              </div>
               <button
-                type="button"
                 onClick={handleConvert}
-                disabled={
-                  selectedFiles.length === 0 || isUploading || isProcessing
-                }
-                className="w-full py-2.5 sm:py-3 px-4 bg-blue-700 text-white rounded-3xl hover:bg-blue-800 disabled:bg-gray-300 transition-colors flex items-center justify-center font-medium text-sm sm:text-base"
+                disabled={selectedFiles.length === 0 || isProcessing || isUploading}
+                className="w-full py-5 bg-gray-900 text-white rounded-full font-black text-lg hover:bg-black disabled:bg-gray-200 disabled:text-gray-400 transition-all shadow-2xl flex items-center justify-center gap-3"
               >
-                {isProcessing ? (
-                  <>
-                    <svg
-                      className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      ></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      ></path>
-                    </svg>
-                    Processing TIFF...
-                  </>
-                ) : (
-                  <>
-                    Convert to PDF
-                    <svg
-                      className="w-4 h-4 sm:w-5 sm:h-5 ml-2"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="M9 5l7 7-7 7"
-                      />
-                    </svg>
-                  </>
-                )}
+                {isProcessing ? <><div className="w-5 h-5 border-4 border-white border-t-transparent rounded-full animate-spin"></div> Processing...</> : "Start Conversion"}
               </button>
             </div>
           </div>
         </div>
       </main>
 
-      {/* Success Modal */}
       {showSuccessModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-lg w-auto text-center animate-in fade-in zoom-in duration-300">
-            <div className="flex justify-center mb-4">
-              <Image
-                src="/asset/images/success-modal.svg"
-                alt="success"
-                width={60}
-                height={60}
-              />
-            </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">
-              Conversion Complete!
-            </h2>
-            <p className="text-gray-600 mb-6">
-              Your TIFF files have been successfully merged into a PDF.
-            </p>
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={handleDownload}
-                className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-full flex items-center justify-center gap-2 transition-colors"
-              >
-                Download PDF
-              </button>
-              <button
-                onClick={handleNext}
-                className="text-gray-500 hover:text-gray-700 text-sm font-medium"
-              >
-                Convert more files
-              </button>
-            </div>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-6">
+          <div className="bg-white rounded-3xl p-10 max-w-sm w-full text-center shadow-2xl scale-in-center">
+            <Image src="/asset/images/success-modal.svg" alt="success" width={100} height={100} className="mx-auto mb-6" />
+            <h2 className="text-3xl font-black text-gray-900 mb-4">Done!</h2>
+            <p className="text-gray-500 mb-10 font-medium">Your TIFF images have been merged into a PDF.</p>
+            <button onClick={handleDownload} className="w-full py-5 bg-blue-600 text-white rounded-full font-black text-lg hover:bg-blue-700 shadow-xl mb-4 transition-all">Download PDF</button>
+            <button onClick={handleNext} className="w-full text-gray-400 font-bold hover:text-gray-600">Start New Task</button>
           </div>
         </div>
       )}
-
-      {/* Error Modal */}
-      {showErrorModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center animate-in fade-in zoom-in duration-300">
-            <div className="flex justify-center mb-4">
-              <Image
-                src="/asset/images/failed-modal.svg"
-                alt="error"
-                width={60}
-                height={60}
-              />
-            </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">
-              Conversion Failed
-            </h2>
-            <p className="text-gray-600 mb-6">
-              We couldn't process the TIFF image. This might be due to a
-              corrupted file or unsupported TIFF variant.
-            </p>
-            <button
-              onClick={handleTryAgain}
-              className="mx-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-full transition-colors w-full"
-            >
-              Try Again
-            </button>
-          </div>
-        </div>
-      )}
-
+      
       <ToolsFooter />
     </div>
   );
