@@ -28,7 +28,8 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    "**/*.mts",
+    "pdfjs-dist.d.ts" 
   ],
   "exclude": ["node_modules"]
 }
