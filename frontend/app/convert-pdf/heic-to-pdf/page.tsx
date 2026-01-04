@@ -1,16 +1,16 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, ChangeEvent } from 'react';
 import Link from 'next/link';
 import Navbar from '@/app/components/navbar';
 import ToolsFooter from '../../components/footer/tools-footer';
 import Image from 'next/image';
 import { jsPDF } from 'jspdf';
+import { Trash2, Loader2, ArrowLeft, Check, ImageIcon, UploadCloud } from 'lucide-react';
 
 export default function HeicToPdf() {
   // --- STATE MANAGEMENT ---
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [quality, setQuality] = useState('standard');
   const [isProcessing, setIsProcessing] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -22,14 +22,15 @@ export default function HeicToPdf() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Mencegah error SSR dengan memastikan komponen sudah mounted di browser
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const newFiles = Array.from(e.target.files);
+  // --- HANDLERS (SOLUSI SEKALI UPLOAD LANGSUNG MASUK) ---
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const newFiles = Array.from(files);
       const heicFiles = newFiles.filter(
         (f) => f.type === 'image/heic' || f.type === 'image/heif' || 
                f.name.toLowerCase().endsWith('.heic') || f.name.toLowerCase().endsWith('.heif')
@@ -43,10 +44,18 @@ export default function HeicToPdf() {
 
       if (heicFiles.length === 0) return;
 
+      // 1. LANGSUNG MASUKKAN KE STATE agar UI langsung merespon
+      setSelectedFiles(prev => [...prev, ...heicFiles]);
       setIsUploading(true);
-      const uploadFiles = heicFiles.map((f) => ({ name: f.name, size: f.size, progress: 0 }));
-      setUploadingFiles(uploadFiles);
+      setDownloadUrl(null);
+      
+      const uploadFilesState = heicFiles.map((f) => ({ name: f.name, size: f.size, progress: 0 }));
+      setUploadingFiles(uploadFilesState);
 
+      // 2. RESET INPUT VALUE agar bisa upload file yang sama berulang kali
+      if (e.target) e.target.value = '';
+
+      // 3. Simulasi Progress (UX Visual)
       heicFiles.forEach((file, index) => {
         let progress = 0;
         const interval = setInterval(() => {
@@ -61,31 +70,21 @@ export default function HeicToPdf() {
             if (index === heicFiles.length - 1) {
               setTimeout(() => {
                 setIsUploading(false);
-                setSelectedFiles((prev) => [...prev, ...heicFiles]);
                 setUploadingFiles([]);
-              }, 200);
+              }, 300);
             }
           }
-        }, 100);
+        }, 80);
       });
     }
   };
 
-  const moveFile = (index: number, direction: 'up' | 'down') => {
-    const newFiles = [...selectedFiles];
-    const newIndex = direction === 'up' ? index - 1 : index + 1;
-    if (newIndex >= 0 && newIndex < selectedFiles.length) {
-      [newFiles[index], newFiles[newIndex]] = [newFiles[newIndex], newFiles[index]];
-      setSelectedFiles(newFiles);
-    }
-  };
-
   const removeFile = (index: number) => {
-    setSelectedFiles(selectedFiles.filter((_, i) => i !== index));
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  // --- LOGIKA KONVERSI DENGAN DYNAMIC IMPORT ---
- const handleConvert = async (e: React.MouseEvent<HTMLButtonElement>) => {
+  // --- LOGIKA KONVERSI (TETAP SAMA) ---
+  const handleConvert = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     if (selectedFiles.length === 0) return;
 
@@ -110,18 +109,14 @@ export default function HeicToPdf() {
         let imageUrl: string | null = null;
         
         try {
-          // Konversi HEIC ke JPEG Blob
           const convertedBlob = await heic2any({
             blob: file,
             toType: 'image/jpeg',
             quality: 0.7
           });
 
-          // PENTING: Ambil blob pertama jika hasilnya adalah array
           const blobToUse = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
-          
-          // Validasi apakah hasil konversi benar-benar ada
-          if (!blobToUse) throw new Error("Conversion resulted in empty blob");
+          if (!blobToUse) throw new Error("Conversion failed");
 
           imageUrl = URL.createObjectURL(blobToUse);
 
@@ -142,27 +137,20 @@ export default function HeicToPdf() {
           pdf.addImage(imageUrl, 'JPEG', xOffset, yOffset, imgWidth, imgHeight);
           
         } catch (innerError) {
-          // Hanya log jika error bukan objek kosong untuk mengurangi noise di console
-          if (Object.keys(innerError as object).length > 0) {
-            console.warn(`File index ${i} skipped:`, innerError);
-          }
+          console.warn(`Skipped file ${i}:`, innerError);
         } finally {
-          // Pastikan URL selalu dibersihkan untuk menghemat RAM
           if (imageUrl) URL.revokeObjectURL(imageUrl);
         }
       }
 
-      // Pastikan ada halaman yang berhasil dibuat sebelum download
       const pdfBlob = pdf.output('blob');
-      if (pdfBlob.size < 1000) throw new Error("PDF file is too small/empty");
+      if (pdfBlob.size < 1000) throw new Error("PDF generation failed");
 
-      const pdfUrl = URL.createObjectURL(pdfBlob);
-      setDownloadUrl(pdfUrl);
+      setDownloadUrl(URL.createObjectURL(pdfBlob));
       setShowSuccessModal(true);
 
     } catch (err) {
-      console.error('Final Conversion Error:', err);
-      setErrorMsg("Gagal mengonversi. Coba kurangi jumlah file atau gunakan ukuran yang lebih kecil.");
+      console.error(err);
       setShowErrorModal(true);
     } finally {
       setIsProcessing(false);
@@ -178,70 +166,129 @@ export default function HeicToPdf() {
     }
   };
 
-  // Jangan render apapun jika belum mounted untuk menghindari error window di server
   if (!mounted) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-900">
       <Navbar />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Link href="/" className="inline-flex items-center text-blue-600 hover:text-blue-700 mb-8 font-medium">
-          <svg className="w-5 h-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to Tools
+      
+      <main className="max-w-7xl mx-auto px-4 py-8 flex-grow w-full">
+        <Link href="/" className="inline-flex items-center text-blue-600 hover:text-blue-700 mb-8 font-semibold transition-colors">
+          <ArrowLeft className="w-5 h-5 mr-1" />
+          <span>Back to Tools</span>
         </Link>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <div className="border-2 border-dashed border-blue-200 rounded-lg p-12 text-center bg-blue-50/30">
-                <Image src="/asset/images/upload.svg" alt="upload" width={100} height={100} className="mx-auto mb-6" />
-                <p className="text-gray-700 text-lg font-medium mb-4">Pilih foto HEIC iPhone Anda</p>
-                <label className="inline-flex items-center px-6 py-3 bg-blue-50 text-blue-600 rounded-full cursor-pointer hover:bg-blue-100 border border-blue-200 transition-colors">
+          {/* AREA KIRI: Upload */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center">
+              
+              <div 
+                onClick={() => !isProcessing && fileInputRef.current?.click()}
+                className="border-2 border-dashed border-blue-200 rounded-2xl p-12 bg-blue-50/30 hover:bg-blue-50/60 transition-all cursor-pointer group"
+              >
+                <div className="flex justify-center mb-6">
+                  <div className="relative w-24 h-24 group-hover:scale-110 transition-transform">
+                    <img src="/asset/images/upload.svg" alt="upload" className="w-full h-full object-contain" />
+                  </div>
+                </div>
+                <p className="text-gray-700 text-xl font-bold mb-2">Pilih foto HEIC iPhone Anda</p>
+                <p className="text-gray-500 mb-8 text-sm italic">Ubah banyak foto HEIC sekaligus menjadi satu file PDF</p>
+                
+                <input ref={fileInputRef} type="file" multiple accept=".heic, .heif" onChange={handleFileChange} className="hidden" />
+                
+                <div className="inline-flex items-center px-10 py-3.5 bg-blue-600 text-white rounded-full shadow-lg font-bold text-sm">
+                  <UploadCloud className="w-5 h-5 mr-2" />
                   Browse Files
-                  <input ref={fileInputRef} type="file" multiple accept=".heic, .heif" onChange={handleFileChange} className="hidden" />
-                </label>
+                </div>
               </div>
 
-              {selectedFiles.length > 0 && !isUploading && (
-                <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  {selectedFiles.map((file, index) => (
-                    <div key={index} className="relative group p-2 bg-gray-50 rounded-lg border">
-                      <div className="aspect-square bg-blue-100 rounded flex items-center justify-center text-blue-600 font-bold text-xs">HEIC</div>
-                      <p className="text-[10px] mt-2 truncate">{file.name}</p>
-                      <button onClick={() => removeFile(index)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition-opacity">
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor font-bold"><path d="M6 18L18 6M6 6l12 12" /></svg>
-                      </button>
+              {/* Progress Bar simulasi */}
+              {isUploading && (
+                <div className="mt-8 space-y-4">
+                  {uploadingFiles.map((f, i) => (
+                    <div key={i} className="bg-gray-50 p-4 rounded-xl border border-gray-100 text-left animate-in fade-in">
+                      <div className="flex justify-between text-xs font-bold mb-2 uppercase text-gray-400 tracking-wider">
+                        <span className="truncate max-w-[200px]">{f.name}</span>
+                        <span>{f.progress}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-blue-600 h-full transition-all duration-300" style={{ width: `${f.progress}%` }} />
+                      </div>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Grid File Terpilih */}
+              {selectedFiles.length > 0 && (
+                <div className="mt-8 animate-in slide-in-from-top-2">
+                  <h3 className="text-left text-base font-bold text-gray-900 mb-4 uppercase tracking-wider">File Terpilih</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    {selectedFiles.map((file, idx) => (
+                      <div key={idx} className="relative p-4 bg-blue-50 rounded-xl border-2 border-transparent hover:border-blue-400 group transition-all shadow-sm">
+                        <div className="aspect-square bg-white rounded-lg flex items-center justify-center text-blue-500 mb-2">
+                          <ImageIcon className="w-8 h-8" />
+                        </div>
+                        <p className="text-[10px] truncate font-bold text-gray-600">{file.name}</p>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); removeFile(idx); }} 
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
           </div>
 
+          {/* AREA KANAN: Sidebar */}
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-4">
-              <h2 className="text-xl font-bold mb-4">HEIC to PDF</h2>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 sticky top-24 h-fit">
+              <h2 className="text-2xl font-black text-gray-900 mb-4 flex items-center gap-2">
+                <ImageIcon className="text-blue-500 w-7 h-7" /> HEIC to PDF
+              </h2>
+              <p className="text-gray-500 text-sm leading-relaxed mb-8">
+                Konversi foto iPhone (HEIC) Anda ke dokumen PDF secara instan tanpa mengurangi kualitas gambar secara drastis.
+              </p>
+
+              {errorMsg && (
+                <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm font-medium flex items-center gap-2">
+                  <Check className="w-4 h-4 bg-red-600 text-white rounded-full p-0.5" />
+                  {errorMsg}
+                </div>
+              )}
+
               <button
                 onClick={handleConvert}
-                disabled={selectedFiles.length === 0 || isProcessing}
-                className="w-full py-3.5 bg-blue-700 text-white rounded-full font-bold hover:bg-blue-800 disabled:bg-gray-300 transition-all flex justify-center items-center gap-2 shadow-lg"
+                disabled={selectedFiles.length === 0 || isProcessing || isUploading}
+                className="w-full py-4 bg-gray-900 text-white rounded-full font-bold hover:bg-black disabled:bg-gray-100 disabled:text-gray-400 transition-all flex items-center justify-center gap-3 shadow-xl"
               >
-                {isProcessing ? "Converting..." : "Convert to PDF"}
+                {isProcessing ? (
+                  <><Loader2 className="w-5 h-5 animate-spin" /> Merender...</>
+                ) : (
+                  "Mulai Konversi"
+                )}
               </button>
             </div>
           </div>
         </div>
       </main>
 
+      {/* SUCCESS MODAL */}
       {showSuccessModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl animate-in zoom-in duration-300">
-            <Image src="/asset/images/success-modal.svg" alt="success" width={80} height={80} className="mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">Success!</h2>
-            <button onClick={handleDownload} className="w-full py-3 bg-blue-600 text-white rounded-full font-bold hover:bg-blue-700 shadow-md">Download PDF</button>
-            <button onClick={() => {setShowSuccessModal(false); setSelectedFiles([]);}} className="w-full mt-4 text-gray-500 font-medium">Convert Another</button>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-3xl p-10 max-w-sm w-full text-center shadow-2xl animate-in zoom-in duration-300">
+            <Image src="/asset/images/success-modal.svg" alt="success" width={100} height={100} className="mx-auto mb-6" />
+            <h2 className="text-2xl font-black text-gray-900 mb-2">Berhasil!</h2>
+            <p className="text-gray-500 mb-8 text-sm">Foto HEIC Anda telah digabungkan ke dalam satu file PDF.</p>
+            <div className="space-y-3">
+              <button onClick={handleDownload} className="w-full py-4 bg-blue-600 text-white rounded-full font-bold hover:bg-blue-700 shadow-lg">Download PDF</button>
+              <button onClick={() => { setShowSuccessModal(false); setSelectedFiles([]); }} className="w-full py-3 text-gray-400 font-bold hover:text-gray-900 transition-colors">Konversi Lainnya</button>
+            </div>
           </div>
         </div>
       )}

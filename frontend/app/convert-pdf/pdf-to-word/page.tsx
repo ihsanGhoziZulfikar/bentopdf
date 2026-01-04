@@ -1,32 +1,75 @@
 'use client';
 
-import React, { useState } from 'react';
-import Navbar from '../../components/navbar';
-import Footer from '../../components/footer/main-footer';
-import { FileText, Download, Loader2, ArrowLeft } from 'lucide-react';
+import React, { useState, useRef, useEffect, ChangeEvent } from 'react';
 import Link from 'next/link';
-
+import Image from 'next/image';
+import Navbar from '../../components/navbar';
+import ToolsFooter from '@/app/components/footer/tools-footer';
+import { ArrowLeft, Trash2, FileText, Loader2, UploadCloud, Check } from 'lucide-react';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { saveAs } from 'file-saver';
 
 export default function PdfToWordPage() {
-  const [loading, setLoading] = useState(false);
+  // --- STATE MANAGEMENT ---
   const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) {
-      setFile(e.target.files[0]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // --- HANDLERS (Sekali Klik Langsung Masuk) ---
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const selectedFile = files[0];
+      
+      if (selectedFile.type !== 'application/pdf') {
+        alert('Hanya file PDF yang diperbolehkan.');
+        if (e.target) e.target.value = '';
+        return;
+      }
+
+      // 1. LANGSUNG SET FILE (UI langsung update)
+      setFile(selectedFile);
+      setIsUploading(true);
+      setUploadProgress(0);
+
+      // 2. Reset input DOM agar bisa upload file yang sama berkali-kali
+      if (e.target) e.target.value = '';
+
+      // 3. Simulasi Progress (UX Kosmetik)
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += 25;
+        setUploadProgress(progress);
+        if (progress >= 100) {
+          clearInterval(interval);
+          setIsUploading(false);
+        }
+      }, 150);
     }
   };
 
+  const removeFile = () => {
+    setFile(null);
+    setUploadProgress(0);
+    setIsUploading(false);
+  };
+
+  // --- LOGIKA ASLI (Tidak Dirubah) ---
   const convertToWord = async () => {
     if (!file) return;
     setLoading(true);
 
     try {
-      // ✅ IMPORT PDFJS DINAMIS (FIX DOMMatrix)
       const pdfjsLib = await import('pdfjs-dist');
-
       pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
       const arrayBuffer = await file.arrayBuffer();
@@ -62,6 +105,7 @@ export default function PdfToWordPage() {
       const blob = await Packer.toBlob(doc);
 
       saveAs(blob, `${file.name.replace('.pdf', '')}.docx`);
+      setShowSuccessModal(true);
     } catch (error) {
       console.error('Conversion failed:', error);
       alert('Gagal mengonversi file. Pastikan PDF tidak terenkripsi.');
@@ -70,69 +114,135 @@ export default function PdfToWordPage() {
     }
   };
 
+  if (!mounted) return null;
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-900">
       <Navbar />
 
-      <main className="max-w-4xl mx-auto px-4 py-20">
-        <Link
-          href="/"
-          className="flex items-center text-blue-600 mb-8 hover:underline"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" /> Back to Tools
+      <main className="max-w-7xl mx-auto px-4 py-8 flex-grow w-full">
+        <Link href="/" className="inline-flex items-center text-blue-600 hover:text-blue-700 mb-8 font-semibold transition-colors">
+          <ArrowLeft className="w-5 h-5 mr-1" />
+          <span>Back to Tools</span>
         </Link>
 
-        <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 text-center">
-          <div className="w-20 h-20 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-            <FileText className="w-10 h-10 text-blue-600" />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* AREA KIRI: Upload Area */}
+          <div className="lg:col-span-2 order-1">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-8 text-center">
+              
+              <div 
+                onClick={() => !loading && fileInputRef.current?.click()}
+                className="border-2 border-dashed border-blue-200 rounded-2xl p-12 bg-blue-50/30 hover:bg-blue-50/60 transition-all cursor-pointer group"
+              >
+                <div className="flex justify-center mb-6">
+                  <div className="relative w-24 h-24 group-hover:scale-110 transition-transform">
+                    <img src="/asset/images/upload.svg" alt="upload" className="w-full h-full object-contain" />
+                  </div>
+                </div>
+                <p className="text-gray-700 text-lg font-bold mb-2">Pilih file PDF untuk dikonversi</p>
+                <p className="text-gray-500 mb-8 text-sm italic">Ubah PDF menjadi dokumen Word (.docx) yang dapat diedit</p>
+                
+                <input 
+                  ref={fileInputRef} 
+                  type="file" 
+                  accept="application/pdf" 
+                  onChange={handleFileChange} 
+                  className="hidden" 
+                />
+                
+                <div className="inline-flex items-center px-10 py-3.5 bg-blue-600 text-white rounded-full shadow-lg font-bold text-sm transition-all hover:bg-blue-700">
+                  <UploadCloud className="w-5 h-5 mr-2" />
+                  Browse File
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              {isUploading && (
+                <div className="mt-8 p-4 bg-gray-50 rounded-xl border border-gray-100 animate-in fade-in">
+                  <div className="flex justify-between text-xs font-bold mb-2 uppercase text-gray-400">
+                    <span>Membaca PDF...</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 h-1.5 rounded-full overflow-hidden">
+                    <div className="bg-blue-600 h-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                  </div>
+                </div>
+              )}
+
+              {/* File Terpilih */}
+              {file && (
+                <div className="mt-8 animate-in slide-in-from-top-2">
+                  <h3 className="text-left text-base font-bold text-gray-900 mb-4 uppercase tracking-wider">File Terpilih</h3>
+                  <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 flex justify-between items-center shadow-sm">
+                    <div className="flex items-center gap-4 truncate">
+                      <div className="bg-blue-600 text-white px-3 py-2 rounded-lg font-black text-[10px] tracking-widest uppercase">WORD</div>
+                      <span className="text-sm font-bold text-gray-900 truncate">{file.name}</span>
+                    </div>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); removeFile(); }} 
+                      className="text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">PDF to Word</h1>
-          <p className="text-gray-600 mb-8">
-            Ubah file PDF Anda menjadi dokumen Word yang dapat diedit secara
-            instan.
-          </p>
+          {/* AREA KANAN: Sidebar */}
+          <div className="lg:col-span-1 order-2">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8 sticky top-24 h-fit">
+              <h2 className="text-2xl font-black text-gray-900 mb-4 flex items-center gap-2">
+                <FileText className="text-blue-500 w-7 h-7" /> PDF to Word
+              </h2>
+              <p className="text-gray-500 text-sm leading-relaxed mb-8 font-medium">
+                Ekstrak teks dari PDF Anda dan susun ulang ke dalam format Microsoft Word (.docx).
+              </p>
 
-          <div className="max-w-md mx-auto">
-            <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-2xl cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
-              <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                <p className="mb-2 text-sm text-gray-500 font-semibold">
-                  {file ? file.name : 'Klik untuk unggah atau seret file'}
-                </p>
-                <p className="text-xs text-gray-400">PDF (Max 10MB)</p>
-              </div>
-              <input
-                type="file"
-                className="hidden"
-                accept=".pdf"
-                onChange={handleFileChange}
-              />
-            </label>
-
-            <button
-              onClick={convertToWord}
-              disabled={!file || loading}
-              className={`w-full mt-6 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
-                !file || loading
-                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-200'
-              }`}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" /> Memproses...
-                </>
-              ) : (
-                <>
-                  <Download className="w-5 h-5" /> Konversi ke Word
-                </>
-              )}
-            </button>
+              <button
+                onClick={convertToWord}
+                disabled={!file || isUploading || loading}
+                className="w-full py-4 bg-gray-900 text-white rounded-full font-black text-lg hover:bg-black disabled:bg-gray-100 disabled:text-gray-400 transition-all flex items-center justify-center gap-3 shadow-xl"
+              >
+                {loading ? (
+                  <><Loader2 className="w-5 h-5 animate-spin" /> Merender...</>
+                ) : (
+                  "Mulai Konversi"
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </main>
 
-      <Footer />
+      {/* SUCCESS MODAL */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-3xl p-10 max-w-sm w-full text-center shadow-2xl animate-in zoom-in duration-300">
+            <Image src="/asset/images/success-modal.svg" alt="success" width={100} height={100} className="mx-auto mb-6" />
+            <h2 className="text-2xl font-black text-gray-900 mb-2">Berhasil!</h2>
+            <p className="text-gray-500 mb-8 text-sm">Dokumen Word Anda telah berhasil dibuat dan diunduh.</p>
+            <div className="space-y-3">
+              <button 
+                onClick={() => setShowSuccessModal(false)}
+                className="w-full py-4 bg-blue-600 text-white rounded-full font-black text-lg hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all"
+              >
+                Tutup
+              </button>
+              <button 
+                onClick={() => {setShowSuccessModal(false); removeFile();}}
+                className="w-full py-3 text-gray-400 font-bold hover:text-gray-900 transition-colors text-sm"
+              >
+                Konversi Lagi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ToolsFooter />
     </div>
   );
 }

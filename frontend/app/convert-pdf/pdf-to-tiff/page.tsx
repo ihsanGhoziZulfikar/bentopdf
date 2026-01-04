@@ -1,19 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, ChangeEvent } from 'react';
 import Link from 'next/link';
-import {
-  ArrowLeft,
-  UploadCloud,
-  Instagram,
-  Linkedin,
-  Menu,
-  X,
-  FileText,
-  Trash2,
-} from 'lucide-react';
+import Image from 'next/image';
+import Navbar from '@/app/components/navbar';
+import ToolsFooter from '../../components/footer/tools-footer';
+import { ArrowLeft, Trash2, ImageIcon, Loader2, UploadCloud, Check } from 'lucide-react';
 
-// Import library
+// --- LIBRARY IMPORTS ---
 import * as pdfjsLib from 'pdfjs-dist';
 import { saveAs } from 'file-saver';
 import JSZip from 'jszip';
@@ -23,24 +17,67 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLi
 
 export default function PdfToTiff() {
   // --- STATE MANAGEMENT ---
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setSelectedFile(e.target.files[0]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // --- HANDLERS ---
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      
+      if (file.type !== 'application/pdf') {
+        alert('Hanya file PDF yang diperbolehkan.');
+        // Reset input jika salah format agar bisa pilih lagi
+        if (e.target) e.target.value = '';
+        return;
+      }
+
+      // 1. LANGSUNG MASUKKAN KE STATE
+      setSelectedFile(file);
+      setIsUploading(true);
+      setUploadProgress(0);
+      setDownloadUrl(null);
+
+      // 2. Simulasi Progress (Visual UX)
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += 25;
+        setUploadProgress(progress);
+        if (progress >= 100) {
+          clearInterval(interval);
+          setIsUploading(false);
+          // JANGAN reset fileInputRef di sini, biarkan tetap ada 
+          // agar data file tidak hilang dari memori saat proses render
+        }
+      }, 100);
     }
   };
 
   const removeFile = () => {
     setSelectedFile(null);
+    setDownloadUrl(null);
+    setUploadProgress(0);
+    // Reset value di sini agar user bisa upload file yang sama lagi setelah dihapus
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
-  // --- LOGIC KONVERSI ---
   const handleConvert = async () => {
     if (!selectedFile) return;
-
     setIsProcessing(true);
     const zip = new JSZip();
 
@@ -49,246 +86,183 @@ export default function PdfToTiff() {
       const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
       const pdf = await loadingTask.promise;
 
-      // Loop setiap halaman PDF
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
-
-        // Scale 2.0 untuk kualitas gambar tajam
-        const viewport = page.getViewport({ scale: 2.0 });
+        const scale = 2.0;
+        const viewport = page.getViewport({ scale });
         const canvas = document.createElement('canvas');
-
-        // Atur dimensi canvas berdasarkan viewport
         canvas.height = viewport.height;
         canvas.width = viewport.width;
 
         const context = canvas.getContext('2d');
-
         if (context) {
-          // PERBAIKAN UTAMA:
-          // Di PDF.js v4, properti 'canvas' menerima HTMLCanvasElement (canvas),
-          // bukan CanvasRenderingContext2D (context).
           await page.render({
-            canvas: canvas, // <--- Gunakan elemen canvas di sini
+            canvasContext: context,
             viewport: viewport,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } as any).promise;
 
-          // Ambil data gambar (Base64)
-          // Catatan: Browser default sering mengonversi ke PNG jika TIFF tidak didukung direct,
-          // tapi kita simpan dengan ekstensi .tiff untuk kebutuhan user.
           const imageData = canvas.toDataURL('image/tiff').split(',')[1];
-
-          // Masukkan ke ZIP
-          zip.file(`page-${i}.tiff`, imageData, { base64: true });
+          zip.file(`halaman-${i}.tiff`, imageData, { base64: true });
         }
       }
 
-      // Generate ZIP file dan download
       const zipContent = await zip.generateAsync({ type: 'blob' });
-      saveAs(
-        zipContent,
-        `BentoPDF-${selectedFile.name.replace('.pdf', '')}-TIFF.zip`
-      );
+      const url = URL.createObjectURL(zipContent);
+      setDownloadUrl(url);
+      
+      saveAs(zipContent, `BentoPDF-${selectedFile.name.replace('.pdf', '')}-TIFF.zip`);
+      setShowSuccessModal(true);
     } catch (error) {
       console.error('Conversion error:', error);
-      alert(
-        'Gagal memproses file PDF. Pastikan file tidak rusak atau terenkripsi.'
-      );
+      alert('Terjadi kesalahan saat konversi.');
     } finally {
       setIsProcessing(false);
     }
   };
 
+  const handleDownload = () => {
+    if (downloadUrl) {
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `BentoPDF-TIFF-Result.zip`;
+      link.click();
+    }
+  };
+
+  const handleConvertAnother = () => {
+    setShowSuccessModal(false);
+    removeFile(); // Bersihkan file dan reset input DOM
+  };
+
+  if (!mounted) return null;
+
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-200 antialiased font-sans">
-      {/* --- NAVIGATION --- */}
-      <nav className="bg-gray-800 border-b border-gray-700 sticky top-0 z-30">
-        <div className="container mx-auto px-4 text-white">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex-shrink-0 flex items-center cursor-pointer">
-              <img src="/images/favicon.svg" alt="Logo" className="h-8 w-8" />
-              <span className="font-bold text-xl ml-2">
-                <Link href="/">BentoPDF</Link>
-              </span>
-            </div>
+    <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-900">
+      <Navbar />
 
-            <div className="hidden md:flex items-center space-x-8 text-white">
-              <Link
-                href="/"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                Home
-              </Link>
-              <Link
-                href="/about"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                About
-              </Link>
-              <Link
-                href="/contact"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                Contact
-              </Link>
-              <Link
-                href="/tools"
-                className="hover:text-indigo-400 transition-colors"
-              >
-                All Tools
-              </Link>
-            </div>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 flex-grow w-full">
+        <Link href="/" className="inline-flex items-center text-blue-600 hover:text-blue-700 mb-8 font-semibold transition-colors">
+          <ArrowLeft className="w-5 h-5 mr-1" />
+          <span>Back to Tools</span>
+        </Link>
 
-            <div className="md:hidden flex items-center">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 order-1">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-8 text-center">
+              
+              {/* Drop Zone */}
+              <div 
+                onClick={() => !isProcessing && fileInputRef.current?.click()}
+                className="border-2 border-dashed border-blue-200 rounded-2xl p-12 bg-blue-50/30 hover:bg-blue-50/60 transition-all cursor-pointer group"
+              >
+                <div className="flex justify-center mb-6">
+                  <div className="relative w-24 h-24 group-hover:scale-110 transition-transform">
+                    <img src="/asset/images/upload.svg" alt="upload" className="w-full h-full object-contain" />
+                  </div>
+                </div>
+                <p className="text-gray-700 text-lg font-bold mb-2">Pilih file PDF Anda</p>
+                <p className="text-gray-500 mb-8 text-sm italic">Setiap halaman akan diekstrak menjadi gambar TIFF</p>
+                
+                {/* Input File yang sesungguhnya */}
+                <input 
+                  ref={fileInputRef} 
+                  type="file" 
+                  accept="application/pdf" 
+                  onChange={handleFileChange} 
+                  className="hidden" 
+                />
+                
+                <button className="px-10 py-3.5 bg-blue-600 text-white rounded-full font-bold shadow-lg transition-all text-sm">
+                  <UploadCloud className="w-5 h-5 inline-block mr-2" />
+                  Browse File
+                </button>
+              </div>
+
+              {/* Progress Bar */}
+              {isUploading && (
+                <div className="mt-8 p-4 bg-gray-50 rounded-xl border border-gray-100 animate-in fade-in">
+                  <div className="flex justify-between text-xs font-bold mb-2 uppercase text-gray-400">
+                    <span>Membaca PDF...</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 h-1.5 rounded-full overflow-hidden">
+                    <div className="bg-blue-600 h-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                  </div>
+                </div>
+              )}
+
+              {/* File Terpilih */}
+              {selectedFile && (
+                <div className="mt-8 animate-in slide-in-from-top-2">
+                  <h3 className="text-left text-base font-bold text-gray-900 mb-4 uppercase tracking-wider">File Terpilih</h3>
+                  <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 flex justify-between items-center shadow-sm">
+                    <div className="flex items-center gap-4 truncate">
+                      <div className="bg-indigo-600 text-white px-3 py-2 rounded-lg font-black text-[10px] tracking-widest uppercase shadow-inner">TIFF</div>
+                      <span className="text-sm font-bold text-gray-900 truncate">{selectedFile.name}</span>
+                    </div>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); removeFile(); }} 
+                      className="text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="lg:col-span-1 order-2">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8 sticky top-24 h-fit">
+              <h2 className="text-2xl font-black text-gray-900 mb-4 flex items-center gap-2">
+                <Check className="text-indigo-500 w-7 h-7" strokeWidth={3} /> PDF to TIFF
+              </h2>
+              <p className="text-gray-500 text-sm leading-relaxed mb-8">
+                Konversi dokumen PDF Anda ke format TIFF dengan resolusi tinggi. Sempurna untuk pengarsipan dan fax server.
+              </p>
+
               <button
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="p-2 text-gray-400 hover:text-white transition-colors"
+                onClick={handleConvert}
+                disabled={!selectedFile || isUploading || isProcessing}
+                className="w-full py-4 bg-gray-900 text-white rounded-full font-black text-lg hover:bg-black disabled:bg-gray-100 disabled:text-gray-300 transition-all flex items-center justify-center gap-3 shadow-xl"
               >
-                {isMenuOpen ? (
-                  <X className="h-6 w-6" />
+                {isProcessing ? (
+                  <><Loader2 className="w-5 h-5 animate-spin" /> Merender...</>
                 ) : (
-                  <Menu className="h-6 w-6" />
+                  "Mulai Konversi"
                 )}
               </button>
             </div>
           </div>
         </div>
+      </main>
 
-        {/* Mobile Dropdown */}
-        {isMenuOpen && (
-          <div className="md:hidden bg-gray-800 border-t border-gray-700 px-4 py-4 space-y-4">
-            <Link
-              href="/"
-              className="block text-white hover:text-indigo-400 transition-colors"
-            >
-              Home
-            </Link>
-            <Link
-              href="/about"
-              className="block text-white hover:text-indigo-400 transition-colors"
-            >
-              About
-            </Link>
-            <Link
-              href="/contact"
-              className="block text-white hover:text-indigo-400 transition-colors"
-            >
-              Contact
-            </Link>
-            <Link
-              href="/tools"
-              className="block text-white hover:text-indigo-400 transition-colors"
-            >
-              All Tools
-            </Link>
-          </div>
-        )}
-      </nav>
-
-      {/* --- MAIN CONTENT --- */}
-      <div
-        id="uploader"
-        className="min-h-[80vh] flex flex-col items-center justify-start py-12 p-4 bg-gray-900"
-      >
-        <div className="bg-gray-800 rounded-xl shadow-xl px-4 py-8 md:p-8 max-w-2xl w-full text-gray-200 border border-gray-700 transition-all">
-          <Link href="/tools" className="inline-flex">
-            <button className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 mb-6 font-semibold transition-colors">
-              <ArrowLeft className="w-5 h-5" />
-              <span>Back to Tools</span>
-            </button>
-          </Link>
-
-          <h1 className="text-2xl font-bold text-white mb-2">PDF to TIFF</h1>
-          <p className="text-gray-400 mb-6 text-sm">
-            Convert each page of a PDF file into a high-quality TIFF image.
-          </p>
-
-          {/* Drop Zone */}
-          <div className="relative flex flex-col items-center justify-center w-full h-48 md:h-64 border-2 border-dashed border-gray-600 rounded-xl cursor-pointer bg-gray-900 hover:bg-gray-700 transition-colors duration-300 group">
-            <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4 pointer-events-none">
-              <UploadCloud className="w-10 h-10 mb-3 text-gray-400 group-hover:text-indigo-400 transition-colors" />
-              <p className="mb-2 text-sm text-gray-400">
-                <span className="font-semibold text-indigo-400">
-                  Click to select a file
-                </span>{' '}
-                or drag and drop
-              </p>
-              <p className="text-xs text-gray-500 italic">
-                Processing happens entirely in your browser.
-              </p>
-            </div>
-            <input
-              type="file"
-              className="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
-              accept="application/pdf"
-              onChange={handleFileChange}
-            />
-          </div>
-
-          {/* Display File Selection */}
-          {selectedFile && (
-            <div className="mt-4 p-3 bg-gray-900 rounded-lg border border-gray-700 flex justify-between items-center animate-in fade-in slide-in-from-top-2">
-              <div className="flex items-center gap-3 overflow-hidden">
-                <FileText className="w-5 h-5 text-indigo-400 flex-shrink-0" />
-                <span className="text-sm truncate font-medium">
-                  {selectedFile.name}
-                </span>
-              </div>
-              <button
-                onClick={removeFile}
-                className="text-red-400 hover:text-red-300 transition-colors p-1"
+      {/* SUCCESS MODAL */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-3xl p-10 max-w-sm w-full text-center shadow-2xl animate-in zoom-in duration-300">
+            <Image src="/asset/images/success-modal.svg" alt="success" width={100} height={100} className="mx-auto mb-6" />
+            <h2 className="text-2xl font-black text-gray-900 mb-2 text-center">Berhasil!</h2>
+            <p className="text-gray-500 mb-8 text-sm">Halaman PDF Anda telah dikonversi ke gambar TIFF.</p>
+            <div className="space-y-3">
+              <button 
+                onClick={handleDownload}
+                className="w-full py-4 bg-blue-600 text-white rounded-full font-black text-lg hover:bg-blue-700 shadow-lg transition-all"
               >
-                <Trash2 className="w-5 h-5" />
+                Download ZIP
+              </button>
+              <button 
+                onClick={handleConvertAnother}
+                className="w-full py-3 text-gray-400 font-bold hover:text-gray-900 transition-colors text-sm"
+              >
+                Konversi Lainnya
               </button>
             </div>
-          )}
-
-          {/* Download Button */}
-          {selectedFile && (
-            <div className="mt-6 animate-in zoom-in-95 duration-200">
-              <button
-                onClick={handleConvert}
-                disabled={isProcessing}
-                className="w-full py-4 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold rounded-lg transition-all shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isProcessing ? 'Processing...' : 'Download All as ZIP'}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* --- FOOTER --- */}
-      <footer className="border-t border-gray-700 py-12 bg-gray-800 mt-auto">
-        <div className="container mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-6 text-center md:text-left">
-          <div className="flex items-center gap-2">
-            <img src="/images/favicon.svg" alt="Logo" className="h-6 w-6" />
-            <span className="font-bold text-white">BentoPDF</span>
-          </div>
-          <p className="text-gray-500 text-sm">
-            © 2026 BentoPDF. All rights reserved.
-          </p>
-          <div className="flex gap-6">
-            <Instagram className="w-5 h-5 text-gray-400 hover:text-indigo-400 cursor-pointer transition-colors" />
-            <Linkedin className="w-5 h-5 text-gray-400 hover:text-indigo-400 cursor-pointer transition-colors" />
-          </div>
-        </div>
-      </footer>
-
-      {/* Loader Modal */}
-      {isProcessing && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 p-8 rounded-2xl flex flex-col items-center gap-4 border border-gray-700 shadow-2xl">
-            <div className="border-4 border-gray-600 border-t-indigo-500 w-12 h-12 rounded-full animate-spin"></div>
-            <p className="text-white text-lg font-medium">
-              Rendering TIFF pages...
-            </p>
-            <p className="text-gray-400 text-xs">
-              Your file is safe, we don't upload it to any server.
-            </p>
           </div>
         </div>
       )}
+
+      <ToolsFooter />
     </div>
   );
 }
