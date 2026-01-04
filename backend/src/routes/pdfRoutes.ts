@@ -17,6 +17,7 @@ import { repairPDF } from '../controllers/repairController';
 import { ocrPDF } from '../controllers/ocrController';
 import { summarizePdf } from '../controllers/summarizeController';
 import { pdfToWord } from '../controllers/pdfToWordController';
+import { decryptPDF } from '../controllers/decryptController';
 
 const router = Router();
 
@@ -27,7 +28,6 @@ const router = Router();
  */
 const handleUpload = (multerMiddleware: RequestHandler) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    // ✅ PENTING: LEWATI REQUEST OPTIONS (CORS PREFLIGHT)
     if (req.method === 'OPTIONS') {
       return res.sendStatus(200);
     }
@@ -57,9 +57,10 @@ const handleUpload = (multerMiddleware: RequestHandler) => {
 router.post('/compress', handleUpload(upload.single('file')), compressPdf);
 router.post('/merge', handleUpload(upload.array('files', 10)), mergePdf); // Perhatikan ini array
 router.post('/split', handleUpload(upload.single('file')), splitPdf);
-router.post('/encrypt', handleUpload(upload.single('file')), encryptPDF);
+router.post('/pdf/encrypt', upload.single('file'), encryptPDF);
 router.post('/summarize', upload.single('file'), summarizePdf);
 router.post('/repair', handleUpload(upload.single('file')), repairPDF);
+router.post('/pdf/decrypt', upload.single('file'), decryptPDF);
 router.post('/ocr', handleUpload(upload.single('file')), ocrPDF);
 router.post('/pdf-to-word', handleUpload(upload.single('file')), pdfToWord);
 

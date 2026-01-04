@@ -1,5 +1,6 @@
 // frontend/app/layout.js
 import './globals.css';
+import VisitorTracker from './components/VisitorTracker';
 
 export const metadata = {
   title: 'Bento PDF',
@@ -13,7 +14,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <VisitorTracker />
+        {children}
+      </body>
     </html>
   );
 }

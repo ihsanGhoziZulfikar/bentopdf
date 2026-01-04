@@ -1,90 +1,74 @@
 import { Request, Response } from 'express';
-import PDFDocument from 'pdfkit';
+import qpdf from 'node-qpdf2';
 import fs from 'fs-extra';
 import path from 'path';
 
-// ==========================================
-// CONTROLLER: ENCRYPT PDF (PURE JS VERSION)
-// ==========================================
 export const encryptPDF = async (req: Request, res: Response) => {
   let inputPath: string | null = null;
+  let outputPath: string | null = null;
 
   try {
-    // 1. Validasi File
+    // 1. Validasi file dari Multer
     if (!req.file) {
-      res.status(400).json({ message: 'File PDF tidak ditemukan.' });
-      return;
+      return res.status(400).send('No file uploaded.');
     }
 
     inputPath = req.file.path;
-
-    // 2. Ambil Password dari Body
     const { userPassword, ownerPassword } = req.body;
 
-    // Validasi Password
+    // 2. Password User wajib ada (sesuai logika Frontend Anda)
     if (!userPassword) {
-      // Hapus file temp jika password tidak ada
       if (inputPath) await fs.unlink(inputPath).catch(() => {});
-      res.status(400).json({ message: 'User Password wajib diisi.' });
-      return;
+      return res.status(400).send('User password is required.');
     }
 
-    // 3. Baca File PDF dari Disk
-    const fileBuffer = await fs.readFile(inputPath);
+    // 3. Setup Path Output
+    const fileName = `protected_${Date.now()}_${req.file.originalname}`;
+    outputPath = path.join('uploads', fileName);
+    await fs.ensureDir('uploads');
 
-    // 4. Proses Enkripsi (AES-256 bit)
-    // Jika ownerPassword kosong, samakan dengan userPassword
-    const finalOwnerPassword = ownerPassword || userPassword;
-
-    // 5. Create encrypted PDF with pdfkit
-    const pdfDoc = new PDFDocument({
-      userPassword: userPassword,
-      ownerPassword: finalOwnerPassword,
-      permissions: {
-        printing: 'highResolution',
-        modifying: false,
-        copying: false,
-        annotating: false,
-        fillingForms: false,
-        contentAccessibility: true,
+    // 4. Proses Enkripsi
+    // Kita gunakan casting 'as any' pada options untuk menghindari
+    // konflik strict type pada 'keyLength' dan 'restrictions'
+    const encryptOptions: any = {
+      input: inputPath,
+      output: outputPath,
+      keyLength: 256, // Nilai: 40, 128, atau 256
+      password: String(userPassword),
+      ownerPassword: String(ownerPassword || userPassword),
+      restrictions: {
+        print: 'none',
+        modify: 'none',
+        copy: 'none',
+        annotate: 'none',
       },
-    });
+    };
 
-    // 6. Collect PDF bytes
-    const chunks: Buffer[] = [];
-    pdfDoc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    await qpdf.encrypt(encryptOptions);
 
-    const encryptedPdfBytes = await new Promise<Buffer>((resolve, reject) => {
-      pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
-      pdfDoc.on('error', reject);
-      pdfDoc.end();
-    });
+    // 5. Kirim file hasil enkripsi ke Frontend
+    if (fs.existsSync(outputPath)) {
+      const encryptedBuffer = await fs.readFile(outputPath);
 
-    // 7. Kirim Response Langsung (Stream)
-    const outputFilename = `encrypted_${req.file.originalname}`;
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${outputFilename}"`
-    );
-    res.setHeader('Content-Length', encryptedPdfBytes.length);
-
-    // Kirim buffer sebagai file
-    res.send(Buffer.from(encryptedPdfBytes));
-
-    // 8. Cleanup: Hapus file input asli dari folder uploads
-    await fs
-      .unlink(inputPath)
-      .catch((err) => console.error('Gagal hapus temp file:', err));
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${fileName}"`
+      );
+      return res.send(encryptedBuffer);
+    } else {
+      throw new Error('Encrypted file was not created by QPDF');
+    }
   } catch (error: any) {
-    // Cleanup jika error
-    if (inputPath) await fs.unlink(inputPath).catch(() => {});
-
-    console.error('Encrypt Error:', error);
-    res.status(500).json({
-      message: 'Gagal mengenkripsi PDF',
-      details: error.message,
-    });
+    console.error('🔥 Encryption Error:', error);
+    return res.status(500).send(`Encryption failed: ${error.message}`);
+  } finally {
+    // 6. Pembersihan File Sementara
+    try {
+      if (inputPath && fs.existsSync(inputPath)) await fs.unlink(inputPath);
+      if (outputPath && fs.existsSync(outputPath)) await fs.unlink(outputPath);
+    } catch (cleanupError) {
+      console.error('Cleanup Error:', cleanupError);
+    }
   }
 };

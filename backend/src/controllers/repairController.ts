@@ -1,60 +1,58 @@
 import { Request, Response } from 'express';
-import fs from 'fs';
+// @ts-ignore
+import * as qpdf from 'node-qpdf2';
+import fs from 'fs-extra';
 import path from 'path';
 
 export const repairPDF = async (req: Request, res: Response) => {
-  console.log('1. Masuk ke controller repairPDF');
-
-  if (!req.file) {
-    console.log('Error: Tidak ada file');
-    return res.status(400).json({ message: 'No file uploaded' });
-  }
-
-  const filePath = req.file.path;
-  console.log(`2. File diterima di: ${filePath}`);
+  let inputPath: string | null = null;
+  let outputPath: string | null = null;
 
   try {
-    // --- MODE DEBUGGING ---
-    // Kita kirim balik file ASLINYA dulu tanpa diproses pdf-lib/ghostscript.
-    // Tujuannya: Memastikan Frontend bisa menerima file download.
+    if (!req.file) {
+      return res.status(400).send('No file uploaded.');
+    }
 
-    const fileName = req.file.originalname;
+    inputPath = req.file.path;
+    const fileName = `repaired_${Date.now()}_${req.file.originalname}`;
+    outputPath = path.join('uploads', fileName);
 
-    // Set Header agar browser tahu ini file PDF untuk didownload
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="repaired_${fileName}"`
-    );
+    await fs.ensureDir('uploads');
 
-    // Buat stream baca file
-    const fileStream = fs.createReadStream(filePath);
+    // SOLUSI: Cast ke 'any' agar TypeScript tidak protes tentang properti 'base'
+    const qpdfEngine = qpdf as any;
 
-    // Saat stream selesai dibaca, hapus file dari server
-    fileStream.on('close', () => {
-      try {
-        fs.unlinkSync(filePath);
-        console.log('3. File temp dihapus (Cleanup)');
-      } catch (e) {
-        console.error('Gagal hapus file:', e);
-      }
+    // Menjalankan perintah repair (qpdf input.pdf --replace-input)
+    // Dalam library node-qpdf2, .base() digunakan untuk command dasar
+    await qpdfEngine.base({
+      input: inputPath,
+      output: outputPath,
     });
 
-    // Kirim ke frontend (Piping)
-    console.log('4. Mengirim stream ke frontend...');
-    fileStream.pipe(res);
+    if (await fs.pathExists(outputPath)) {
+      const fileBuffer = await fs.readFile(outputPath);
 
-    // Handle jika error saat kirim
-    fileStream.on('error', (err) => {
-      console.error('Stream Error:', err);
-      res.status(500).end();
-    });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${fileName}"`
+      );
+
+      return res.send(fileBuffer);
+    } else {
+      throw new Error('Output file not found');
+    }
   } catch (error: any) {
-    console.error('🔥 Controller Error:', error);
-    // Hapus file jika ada error
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    res
-      .status(500)
-      .json({ message: 'Processing failed', error: error.message });
+    console.error('🔥 Repair Error:', error);
+    return res.status(500).send(`Repair failed: ${error.message}`);
+  } finally {
+    try {
+      if (inputPath && (await fs.pathExists(inputPath)))
+        await fs.unlink(inputPath);
+      if (outputPath && (await fs.pathExists(outputPath)))
+        await fs.unlink(outputPath);
+    } catch (err) {
+      console.error('Cleanup Error:', err);
+    }
   }
 };

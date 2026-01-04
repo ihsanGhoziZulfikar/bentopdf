@@ -130,9 +130,9 @@ export default function EncryptPDF() {
       formData.append('userPassword', userPassword);
       if (ownerPassword) formData.append('ownerPassword', ownerPassword);
 
-      const response = await fetch('http://localhost:5000/api/encrypt', {
+      const response = await fetch('http://localhost:5000/api/pdf/encrypt', {
         method: 'POST',
-        body: formData, // ❗ JANGAN headers
+        body: formData,
       });
 
       if (!response.ok) {

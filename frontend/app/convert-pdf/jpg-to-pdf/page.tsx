@@ -5,6 +5,8 @@ import Link from 'next/link';
 import Navbar from '@/app/components/navbar';
 import ToolsFooter from '../../components/footer/tools-footer';
 import Image from 'next/image';
+// Import jsPDF
+import { jsPDF } from 'jspdf';
 
 export default function JpgToPdf() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -12,6 +14,9 @@ export default function JpgToPdf() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // State untuk pdf blob object (agar bisa didownload manual)
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+
   const [uploadingFiles, setUploadingFiles] = useState<
     { name: string; size: number; progress: number }[]
   >([]);
@@ -20,6 +25,28 @@ export default function JpgToPdf() {
   const [showErrorModal, setShowErrorModal] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Helper: Membaca file menjadi Data URL (base64)
+  const readFileAsDataURL = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Helper: Mendapatkan dimensi gambar untuk scaling
+  const getImageProperties = (
+    url: string
+  ): Promise<{ width: number; height: number }> => {
+    return new Promise((resolve, reject) => {
+      const img = new window.Image();
+      img.onload = () => resolve({ width: img.width, height: img.height });
+      img.onerror = reject;
+      img.src = url;
+    });
+  };
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -39,6 +66,8 @@ export default function JpgToPdf() {
         setErrorMsg(null);
       }
 
+      if (jpgFiles.length === 0) return;
+
       setIsUploading(true);
 
       const uploadFiles = jpgFiles.map((f) => ({
@@ -49,13 +78,15 @@ export default function JpgToPdf() {
 
       setUploadingFiles(uploadFiles);
 
+      // Simulasi progress bar "upload" (membaca file ke memori browser)
       jpgFiles.forEach((file, index) => {
         let progress = 0;
         const interval = setInterval(() => {
-          progress += 10;
+          progress += 20; // Lebih cepat karena client side
           setUploadingFiles((prev) => {
             const updated = [...prev];
-            if (updated[index]) updated[index].progress = progress;
+            if (updated[index])
+              updated[index].progress = Math.min(progress, 100);
             return updated;
           });
 
@@ -69,7 +100,7 @@ export default function JpgToPdf() {
               }
             }, 200);
           }
-        }, 100);
+        }, 50);
       });
 
       setDownloadUrl(null);
@@ -92,6 +123,7 @@ export default function JpgToPdf() {
     }
   };
 
+  // --- LOGIKA UTAMA KONVERSI DI SINI ---
   const handleConvert = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
 
@@ -103,22 +135,77 @@ export default function JpgToPdf() {
     setIsProcessing(true);
     setErrorMsg(null);
 
-    // Simulasi proses konversi dengan kemungkinan success/error
-    setTimeout(() => {
-      setIsProcessing(false);
+    try {
+      // 1. Inisialisasi PDF (A4 size default)
+      // Orientation 'p' (portrait), unit 'mm', format 'a4'
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
 
-      // Simulasi random success/error (80% success, 20% error)
-      const isSuccess = Math.random() > 0.2;
+      // Margin opsional (misal 10mm)
+      const margin = 10;
+      const contentWidth = pageWidth - margin * 2;
+      const contentHeight = pageHeight - margin * 2;
 
-      if (isSuccess) {
-        // Success - tampilkan modal success
-        setDownloadUrl('#download-url'); // Placeholder URL
-        setShowSuccessModal(true);
-      } else {
-        // Error - tampilkan modal error
-        setShowErrorModal(true);
+      // 2. Loop melalui setiap file gambar
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+
+        // Baca file jadi base64 string
+        const imgData = await readFileAsDataURL(file);
+
+        // Dapatkan properti asli gambar
+        const { width: imgWidth, height: imgHeight } =
+          await getImageProperties(imgData);
+
+        // 3. Hitung Scaling (Agar muat di A4 tapi tetap proporsional)
+        const ratio = Math.min(
+          contentWidth / imgWidth,
+          contentHeight / imgHeight
+        );
+        const newWidth = imgWidth * ratio;
+        const newHeight = imgHeight * ratio;
+
+        // Posisi tengah (center)
+        const x = (pageWidth - newWidth) / 2;
+        const y = (pageHeight - newHeight) / 2;
+
+        // Tambahkan halaman baru jika ini bukan gambar pertama
+        if (i > 0) {
+          doc.addPage();
+        }
+
+        // 4. Masukkan gambar ke PDF
+        // compression: 'FAST' | 'MEDIUM' | 'SLOW' | 'NONE' based on user selection
+        let compression: 'FAST' | 'MEDIUM' | 'SLOW' | 'NONE' = 'MEDIUM';
+        if (quality === 'high') compression = 'NONE';
+        if (quality === 'low') compression = 'FAST';
+
+        doc.addImage(
+          imgData,
+          'JPEG',
+          x,
+          y,
+          newWidth,
+          newHeight,
+          undefined,
+          compression
+        );
       }
-    }, 2000);
+
+      // 5. Generate Blob URL untuk download
+      const pdfBlob = doc.output('blob');
+      const blobUrl = URL.createObjectURL(pdfBlob);
+
+      setPdfBlob(pdfBlob);
+      setDownloadUrl(blobUrl);
+      setShowSuccessModal(true);
+    } catch (error) {
+      console.error('Conversion failed:', error);
+      setShowErrorModal(true);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleTryAgain = () => {
@@ -129,12 +216,21 @@ export default function JpgToPdf() {
   const handleNext = () => {
     setShowSuccessModal(false);
     setDownloadUrl(null);
+    setPdfBlob(null);
     setSelectedFiles([]);
   };
 
   const handleDownload = () => {
-    // Logic untuk download file
-    alert('Downloading PDF...');
+    if (pdfBlob) {
+      const doc = new jsPDF(); // Instance dummy hanya untuk akses fungsi save jika diperlukan, tapi lebih baik pakai anchor tag
+      // Cara paling aman download blob di React:
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(pdfBlob);
+      link.download = `converted-${new Date().getTime()}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   return (
@@ -148,6 +244,7 @@ export default function JpgToPdf() {
           href="/"
           className="inline-flex items-center text-blue-600 hover:text-blue-700 mb-4 sm:mb-8 text-sm sm:text-base"
         >
+          {/* ... (SVG Icon Back) ... */}
           <svg
             className="w-4 h-4 sm:w-5 sm:h-5 mr-1"
             fill="none"
@@ -168,7 +265,7 @@ export default function JpgToPdf() {
           {/* Upload Area */}
           <div className="lg:col-span-2 order-1 lg:order-1">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-              {/* Drop Zone - Selalu Tampil */}
+              {/* Drop Zone */}
               <div className="border-2 border-dashed border-blue-300 rounded-lg p-6 sm:p-12 text-center bg-blue-50/30">
                 <div className="flex justify-center mb-4 sm:mb-6">
                   <div className="relative w-24 h-24 sm:w-32 sm:h-32">
@@ -221,7 +318,7 @@ export default function JpgToPdf() {
                       clipRule="evenodd"
                     />
                   </svg>
-                  Supported formats: JPG, JPEG (Max. 10 MB)
+                  Supported formats: JPG, JPEG (Client-side Processing)
                 </div>
               </div>
 
@@ -232,7 +329,7 @@ export default function JpgToPdf() {
                 </div>
               )}
 
-              {/* GAMBAR 1 - Uploading Files dengan Progress Bar */}
+              {/* Upload Progress */}
               {isUploading && uploadingFiles.length > 0 && (
                 <div className="mt-4 space-y-3">
                   {uploadingFiles.map((file, index) => (
@@ -242,6 +339,7 @@ export default function JpgToPdf() {
                     >
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
+                          {/* Icon File */}
                           <svg
                             className="w-6 h-6 sm:w-8 sm:h-8 text-blue-500 flex-shrink-0"
                             fill="currentColor"
@@ -262,6 +360,7 @@ export default function JpgToPdf() {
                             </p>
                           </div>
                         </div>
+                        {/* Cancel Button (Visual only while uploading) */}
                         <button className="p-1.5 sm:p-2 text-gray-400 hover:text-red-500 transition-colors">
                           <svg
                             className="w-4 h-4 sm:w-5 sm:h-5"
@@ -292,7 +391,7 @@ export default function JpgToPdf() {
                 </div>
               )}
 
-              {/* Success Message */}
+              {/* Success Message Inline */}
               {downloadUrl && !isUploading && !showSuccessModal && (
                 <div className="mt-4 p-3 sm:p-4 bg-green-50 border border-green-200 rounded-lg">
                   <p className="text-green-800 font-semibold mb-3 flex items-center text-sm sm:text-base">
@@ -309,17 +408,17 @@ export default function JpgToPdf() {
                     </svg>
                     Conversion Successful!
                   </p>
-                  <a
-                    href={downloadUrl}
-                    download="bento-converted.pdf"
+                  <button
+                    onClick={handleDownload}
                     className="inline-block px-4 sm:px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors text-sm sm:text-base"
                   >
                     Download PDF
-                  </a>
+                  </button>
                   <button
                     onClick={() => {
                       setDownloadUrl(null);
                       setSelectedFiles([]);
+                      setPdfBlob(null);
                     }}
                     className="ml-2 sm:ml-3 text-xs sm:text-sm text-gray-600 hover:text-gray-900 underline"
                   >
@@ -328,7 +427,7 @@ export default function JpgToPdf() {
                 </div>
               )}
 
-              {/* GAMBAR 2 - Uploaded Files Grid dengan Thumbnail */}
+              {/* List of Selected Files */}
               {!isUploading && selectedFiles.length > 0 && (
                 <div className="mt-4">
                   <div className="flex items-center justify-between mb-3">
@@ -343,7 +442,7 @@ export default function JpgToPdf() {
                         key={`file-${index}`}
                         className="relative group bg-gray-50 rounded-lg border border-gray-200 p-3 hover:border-gray-300 transition-colors"
                       >
-                        {/* Thumbnail Preview */}
+                        {/* Thumbnail Icon */}
                         <div className="aspect-square bg-gray-200 rounded mb-2 flex items-center justify-center overflow-hidden">
                           <svg
                             className="w-12 h-12 text-blue-400"
@@ -358,7 +457,7 @@ export default function JpgToPdf() {
                           </svg>
                         </div>
 
-                        {/* File Info */}
+                        {/* File Name */}
                         <p className="text-xs text-gray-900 truncate font-medium mb-1">
                           {file.name}
                         </p>
@@ -366,7 +465,7 @@ export default function JpgToPdf() {
                           {(file.size / 1024).toFixed(1)} KB
                         </p>
 
-                        {/* Action Buttons - Show on Hover */}
+                        {/* Hover Actions */}
                         <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => moveFile(index, 'up')}
@@ -429,7 +528,7 @@ export default function JpgToPdf() {
                           </button>
                         </div>
 
-                        {/* Order Badge */}
+                        {/* Number Badge */}
                         <div className="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1.5 py-0.5 rounded">
                           {index + 1}
                         </div>
@@ -468,15 +567,15 @@ export default function JpgToPdf() {
             </div>
           </div>
 
-          {/* Info Panel */}
+          {/* Info Panel / Sidebar */}
           <div className="lg:col-span-1 order-1 lg:order-2">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
                 JPG to PDF
               </h2>
               <p className="text-gray-600 mb-4 sm:mb-6 text-sm sm:text-base">
-                Convert your JPG images into a single PDF file with custom
-                quality settings.
+                Convert your JPG images into a single PDF file securely in your
+                browser.
               </p>
 
               {/* Quality Settings */}
@@ -494,16 +593,17 @@ export default function JpgToPdf() {
                     onChange={(e) => setQuality(e.target.value)}
                     className="w-full bg-white border border-gray-300 text-gray-900 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                   >
-                    <option value="high">High Quality (Larger file)</option>
-                    <option value="medium">Medium Quality (Balance)</option>
-                    <option value="low">Low Quality (Smaller file)</option>
+                    <option value="high">High Quality (Original Size)</option>
+                    <option value="medium">Medium Quality (Standard)</option>
+                    <option value="low">Low Quality (Compressed)</option>
                   </select>
                   <p className="mt-1 text-xs text-gray-500">
-                    Controls image compression when embedding into PDF
+                    Controls image compression level in the PDF.
                   </p>
                 </div>
               )}
 
+              {/* Convert Button */}
               <button
                 type="button"
                 onClick={handleConvert}
@@ -534,7 +634,7 @@ export default function JpgToPdf() {
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                       ></path>
                     </svg>
-                    Converting...
+                    Processing...
                   </>
                 ) : (
                   <>
@@ -564,7 +664,6 @@ export default function JpgToPdf() {
       {showSuccessModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-lg w-auto text-center animate-in fade-in zoom-in duration-300">
-            {/* Success Icon */}
             <div className="flex justify-center">
               <Image
                 className="w-50 h-50 text-white"
@@ -574,45 +673,24 @@ export default function JpgToPdf() {
                 height={50}
               />
             </div>
-
-            {/* Title */}
             <h2 className="text-2xl font-bold text-gray-900 mb-3">Success!</h2>
+            <p className="text-gray-600 mb-2">Your PDF is ready.</p>
+            <p className="text-gray-600 mb-6">Click below to save it.</p>
 
-            {/* Message */}
-            <p className="text-gray-600 mb-2">
-              The download will start automatically.
-            </p>
-            <p className="text-gray-600 mb-6">
-              If not, click{' '}
+            <div className="flex flex-col gap-3 justify-center items-center">
               <button
                 onClick={handleDownload}
-                className="text-yellow-400 font-semibold hover:underline"
+                className="w-full bg-yellow-400 hover:bg-yellow-500 text-black font-semibold py-3 px-6 rounded-full transition-colors"
               >
-                Download
-              </button>{' '}
-              to manually save the file.
-            </p>
-
-            {/* Button */}
-            <button
-              onClick={handleNext}
-              className="block mx-auto w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-full transition-colors flex items-center justify-center gap-2"
-            >
-              Next
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
+                Download PDF Now
+              </button>
+              <button
+                onClick={handleNext}
+                className="text-gray-500 hover:text-gray-700 text-sm font-medium"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M9 5l7 7-7 7"
-                />
-              </svg>
-            </button>
+                Close & Convert New File
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -621,50 +699,30 @@ export default function JpgToPdf() {
       {showErrorModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center animate-in fade-in zoom-in duration-300">
-            {/* Error Icon */}
             <div className="flex justify-center">
               <Image
                 className="w-50 h-50 text-white"
                 src="/asset/images/failed-modal.svg"
-                alt="success"
+                alt="failed"
                 width={50}
                 height={50}
               />
             </div>
-
-            {/* Title */}
             <h2 className="text-2xl font-bold text-gray-900 mb-3">Failed!</h2>
-
-            {/* Message */}
             <p className="text-gray-600 mb-6">
-              Unable to convert the file to PDF. Please try again.
+              Unable to convert the file. Please check if the image is valid and
+              try again.
             </p>
-
-            {/* Button */}
             <button
               onClick={handleTryAgain}
-              className="block mx-auto w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-full transition-colors flex items-center justify-center gap-2"
+              className="block mx-auto w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-full transition-colors"
             >
               Try Again
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M9 5l7 7-7 7"
-                />
-              </svg>
             </button>
           </div>
         </div>
       )}
 
-      {/* Footer */}
       <ToolsFooter />
     </div>
   );

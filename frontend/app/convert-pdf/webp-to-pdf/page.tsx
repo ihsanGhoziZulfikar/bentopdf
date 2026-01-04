@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Navbar from '@/app/components/navbar';
 import ToolsFooter from '../../components/footer/tools-footer';
 import Image from 'next/image';
+import { jsPDF } from 'jspdf'; // Import library jsPDF
 
 export default function WebPToPdf() {
   // --- STATE MANAGEMENT ---
@@ -19,20 +20,41 @@ export default function WebPToPdf() {
   const [isUploading, setIsUploading] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null); // State untuk menyimpan Blob PDF
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- HELPER: Baca File jadi Data URL (Base64) ---
+  const readFileAsDataURL = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // --- HELPER: Ambil Dimensi Gambar ---
+  const getImageDimensions = (
+    url: string
+  ): Promise<{ width: number; height: number }> => {
+    return new Promise((resolve, reject) => {
+      const img = new window.Image();
+      img.onload = () => resolve({ width: img.width, height: img.height });
+      img.onerror = reject;
+      img.src = url;
+    });
+  };
 
   // --- HANDLERS ---
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const newFiles = Array.from(e.target.files);
-      
+
       // VALIDASI: Filter khusus WebP
       const webpFiles = newFiles.filter(
-        (f) =>
-          f.type === 'image/webp' ||
-          f.name.toLowerCase().endsWith('.webp')
+        (f) => f.type === 'image/webp' || f.name.toLowerCase().endsWith('.webp')
       );
 
       if (webpFiles.length !== newFiles.length) {
@@ -42,6 +64,8 @@ export default function WebPToPdf() {
       } else {
         setErrorMsg(null);
       }
+
+      if (webpFiles.length === 0) return;
 
       setIsUploading(true);
 
@@ -53,11 +77,11 @@ export default function WebPToPdf() {
 
       setUploadingFiles(uploadFiles);
 
-      // Simulasi Upload Progress
+      // Simulasi Upload Progress (Hanya visual karena client-side)
       webpFiles.forEach((file, index) => {
         let progress = 0;
         const interval = setInterval(() => {
-          progress += 10;
+          progress += 20; // Lebih cepat karena lokal
           setUploadingFiles((prev) => {
             const updated = [...prev];
             if (updated[index]) updated[index].progress = progress;
@@ -74,7 +98,7 @@ export default function WebPToPdf() {
               }
             }, 200);
           }
-        }, 100);
+        }, 50);
       });
 
       setDownloadUrl(null);
@@ -97,6 +121,7 @@ export default function WebPToPdf() {
     }
   };
 
+  // --- LOGIKA UTAMA KONVERSI CLIENT-SIDE ---
   const handleConvert = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
 
@@ -108,20 +133,81 @@ export default function WebPToPdf() {
     setIsProcessing(true);
     setErrorMsg(null);
 
-    // Simulasi proses konversi
-    setTimeout(() => {
-      setIsProcessing(false);
+    try {
+      // 1. Inisialisasi jsPDF (Default A4)
+      // Unit 'mm' memudahkan perhitungan ukuran kertas standar
+      const pdf = new jsPDF({
+        orientation: 'p',
+        unit: 'mm',
+        format: 'a4',
+      });
 
-      // Simulasi random success/error (80% success)
-      const isSuccess = Math.random() > 0.2;
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
 
-      if (isSuccess) {
-        setDownloadUrl('#download-url'); 
-        setShowSuccessModal(true);
-      } else {
-        setShowErrorModal(true);
+      // Loop setiap file
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+
+        // Baca file jadi Base64
+        const imgData = await readFileAsDataURL(file);
+        const { width: imgRawWidth, height: imgRawHeight } =
+          await getImageDimensions(imgData);
+
+        // Hitung rasio aspek agar gambar muat di A4 (dengan margin sedikit)
+        const margin = 10;
+        const availableWidth = pageWidth - margin * 2;
+        const availableHeight = pageHeight - margin * 2;
+
+        const ratio = Math.min(
+          availableWidth / imgRawWidth,
+          availableHeight / imgRawHeight
+        );
+
+        const imgWidth = imgRawWidth * ratio;
+        const imgHeight = imgRawHeight * ratio;
+
+        // Posisi tengah (center)
+        const x = (pageWidth - imgWidth) / 2;
+        const y = (pageHeight - imgHeight) / 2;
+
+        // Tambahkan halaman baru jika bukan gambar pertama
+        if (i > 0) {
+          pdf.addPage();
+        }
+
+        // Tentukan kompresi berdasarkan state quality
+        let compression: 'FAST' | 'MEDIUM' | 'SLOW' | 'NONE' = 'FAST';
+        if (quality === 'high') compression = 'NONE';
+        if (quality === 'medium') compression = 'MEDIUM'; // Default jspdf biasanya JPEG
+        if (quality === 'low') compression = 'FAST';
+
+        // Tambahkan gambar ke PDF
+        pdf.addImage(
+          imgData,
+          'WEBP',
+          x,
+          y,
+          imgWidth,
+          imgHeight,
+          undefined,
+          compression
+        );
       }
-    }, 2000);
+
+      // 2. Generate Blob URL
+      const blob = pdf.output('blob');
+      const url = URL.createObjectURL(blob);
+
+      setPdfBlob(blob); // Simpan blob untuk download manual jika perlu
+      setDownloadUrl(url);
+      setShowSuccessModal(true);
+    } catch (error) {
+      console.error('Conversion failed:', error);
+      setShowErrorModal(true);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleTryAgain = () => {
@@ -131,12 +217,23 @@ export default function WebPToPdf() {
 
   const handleNext = () => {
     setShowSuccessModal(false);
+    // Bersihkan URL lama untuk mencegah memory leak
+    if (downloadUrl) URL.revokeObjectURL(downloadUrl);
     setDownloadUrl(null);
+    setPdfBlob(null);
     setSelectedFiles([]);
   };
 
   const handleDownload = () => {
-    alert('Downloading PDF...');
+    if (downloadUrl) {
+      // Buat elemen anchor temporary untuk trigger download
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = 'converted-images.pdf';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   return (
@@ -223,7 +320,7 @@ export default function WebPToPdf() {
                       clipRule="evenodd"
                     />
                   </svg>
-                  Supported formats: WebP (Max. 10 MB)
+                  Supported formats: WebP (Processed in Browser)
                 </div>
               </div>
 
@@ -265,21 +362,6 @@ export default function WebPToPdf() {
                             </p>
                           </div>
                         </div>
-                        <button className="p-1.5 sm:p-2 text-gray-400 hover:text-red-500 transition-colors">
-                          <svg
-                            className="w-4 h-4 sm:w-5 sm:h-5"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="2"
-                              d="M6 18L18 6M6 6l12 12"
-                            />
-                          </svg>
-                        </button>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <div
@@ -287,15 +369,12 @@ export default function WebPToPdf() {
                           style={{ width: `${file.progress}%` }}
                         ></div>
                       </div>
-                      <p className="text-xs text-gray-500 mt-1 text-right">
-                        {file.progress}%
-                      </p>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Success Message */}
+              {/* Success Message Inline (Optional, since we have modal) */}
               {downloadUrl && !isUploading && !showSuccessModal && (
                 <div className="mt-4 p-3 sm:p-4 bg-green-50 border border-green-200 rounded-lg">
                   <p className="text-green-800 font-semibold mb-3 flex items-center text-sm sm:text-base">
@@ -312,21 +391,17 @@ export default function WebPToPdf() {
                     </svg>
                     Conversion Successful!
                   </p>
-                  <a
-                    href={downloadUrl}
-                    download="bento-converted.pdf"
+                  <button
+                    onClick={handleDownload}
                     className="inline-block px-4 sm:px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors text-sm sm:text-base"
                   >
                     Download PDF
-                  </a>
+                  </button>
                   <button
-                    onClick={() => {
-                      setDownloadUrl(null);
-                      setSelectedFiles([]);
-                    }}
+                    onClick={handleNext}
                     className="ml-2 sm:ml-3 text-xs sm:text-sm text-gray-600 hover:text-gray-900 underline"
                   >
-                    Convert Another File
+                    Reset
                   </button>
                 </div>
               )}
@@ -347,19 +422,18 @@ export default function WebPToPdf() {
                         className="relative group bg-gray-50 rounded-lg border border-gray-200 p-3 hover:border-gray-300 transition-colors"
                       >
                         {/* Thumbnail Preview */}
-                        <div className="aspect-square bg-gray-200 rounded mb-2 flex items-center justify-center overflow-hidden">
-                          {/* WebP Icon */}
-                          <svg
-                            className="w-12 h-12 text-green-400"
-                            fill="currentColor"
-                            viewBox="0 0 20 20"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
+                        <div className="aspect-square bg-gray-200 rounded mb-2 flex items-center justify-center overflow-hidden relative">
+                          {/* Real Preview using URL.createObjectURL */}
+                          <img
+                            src={URL.createObjectURL(file)}
+                            alt={file.name}
+                            className="w-full h-full object-cover"
+                            onLoad={(e) =>
+                              URL.revokeObjectURL(
+                                (e.target as HTMLImageElement).src
+                              )
+                            }
+                          />
                         </div>
 
                         {/* File Info */}
@@ -371,7 +445,7 @@ export default function WebPToPdf() {
                         </p>
 
                         {/* Action Buttons - Show on Hover */}
-                        <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 rounded p-1">
                           <button
                             onClick={() => moveFile(index, 'up')}
                             disabled={index === 0}
@@ -434,7 +508,7 @@ export default function WebPToPdf() {
                         </div>
 
                         {/* Order Badge */}
-                        <div className="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1.5 py-0.5 rounded">
+                        <div className="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1.5 py-0.5 rounded shadow">
                           {index + 1}
                         </div>
                       </div>
@@ -474,13 +548,13 @@ export default function WebPToPdf() {
 
           {/* Info Panel */}
           <div className="lg:col-span-1 order-1 lg:order-2">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 sticky top-20">
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
                 WebP to PDF
               </h2>
               <p className="text-gray-600 mb-4 sm:mb-6 text-sm sm:text-base">
-                Convert your WebP images into a single PDF file with custom
-                quality settings.
+                Convert your WebP images into a single PDF file securely in your
+                browser.
               </p>
 
               {/* Quality Settings */}
@@ -498,9 +572,9 @@ export default function WebPToPdf() {
                     onChange={(e) => setQuality(e.target.value)}
                     className="w-full bg-white border border-gray-300 text-gray-900 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                   >
-                    <option value="high">High Quality (Larger file)</option>
-                    <option value="medium">Medium Quality (Balance)</option>
-                    <option value="low">Low Quality (Smaller file)</option>
+                    <option value="high">High Quality (Original Size)</option>
+                    <option value="medium">Medium Quality (Optimized)</option>
+                    <option value="low">Low Quality (Smallest File)</option>
                   </select>
                   <p className="mt-1 text-xs text-gray-500">
                     Controls image compression when embedding into PDF
@@ -514,7 +588,7 @@ export default function WebPToPdf() {
                 disabled={
                   selectedFiles.length === 0 || isUploading || isProcessing
                 }
-                className="mx-auto w-auto py-2.5 sm:py-3 px-4 sm:px-6 bg-blue-700 text-white rounded-3xl hover:bg-blue-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center font-medium text-sm sm:text-base"
+                className="w-full py-2.5 sm:py-3 px-4 sm:px-6 bg-blue-700 text-white rounded-3xl hover:bg-blue-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center font-medium text-sm sm:text-base"
               >
                 {isProcessing ? (
                   <>
@@ -538,7 +612,7 @@ export default function WebPToPdf() {
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                       ></path>
                     </svg>
-                    Converting...
+                    Processing...
                   </>
                 ) : (
                   <>
@@ -567,16 +641,24 @@ export default function WebPToPdf() {
       {/* Success Modal */}
       {showSuccessModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-lg w-auto text-center animate-in fade-in zoom-in duration-300">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-lg w-full text-center animate-in fade-in zoom-in duration-300">
             {/* Success Icon */}
-            <div className="flex justify-center">
-              <Image
-                className="w-50 h-50 text-white"
-                src="/asset/images/success-modal.svg"
-                alt="success"
-                width={50}
-                height={50}
-              />
+            <div className="flex justify-center mb-4">
+              <div className="rounded-full bg-green-100 p-4">
+                <svg
+                  className="w-16 h-16 text-green-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </div>
             </div>
 
             {/* Title */}
@@ -584,17 +666,17 @@ export default function WebPToPdf() {
 
             {/* Message */}
             <p className="text-gray-600 mb-2">
-              The download will start automatically.
+              Your PDF is ready. The download should start automatically.
             </p>
-            <p className="text-gray-600 mb-6">
+            <p className="text-gray-600 mb-6 text-sm">
               If not, click{' '}
               <button
                 onClick={handleDownload}
-                className="text-yellow-400 font-semibold hover:underline"
+                className="text-blue-600 font-semibold hover:underline"
               >
-                Download
+                Download PDF
               </button>{' '}
-              to manually save the file.
+              to save manually.
             </p>
 
             {/* Button */}
@@ -602,7 +684,7 @@ export default function WebPToPdf() {
               onClick={handleNext}
               className="block mx-auto w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-full transition-colors flex items-center justify-center gap-2"
             >
-              Next
+              Convert More Files
               <svg
                 className="w-5 h-5"
                 fill="none"
@@ -613,7 +695,7 @@ export default function WebPToPdf() {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth="2"
-                  d="M9 5l7 7-7 7"
+                  d="M14 5l7 7m0 0l-7 7m7-7H3"
                 />
               </svg>
             </button>
@@ -626,14 +708,22 @@ export default function WebPToPdf() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center animate-in fade-in zoom-in duration-300">
             {/* Error Icon */}
-            <div className="flex justify-center">
-              <Image
-                className="w-50 h-50 text-white"
-                src="/asset/images/failed-modal.svg"
-                alt="success"
-                width={50}
-                height={50}
-              />
+            <div className="flex justify-center mb-4">
+              <div className="rounded-full bg-red-100 p-4">
+                <svg
+                  className="w-16 h-16 text-red-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </div>
             </div>
 
             {/* Title */}
@@ -641,7 +731,8 @@ export default function WebPToPdf() {
 
             {/* Message */}
             <p className="text-gray-600 mb-6">
-              Unable to convert the file to PDF. Please try again.
+              Unable to convert the file. Please check if your WebP files are
+              valid and try again.
             </p>
 
             {/* Button */}
@@ -660,7 +751,7 @@ export default function WebPToPdf() {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth="2"
-                  d="M9 5l7 7-7 7"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                 />
               </svg>
             </button>
