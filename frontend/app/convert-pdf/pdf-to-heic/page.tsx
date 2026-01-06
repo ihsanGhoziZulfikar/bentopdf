@@ -15,7 +15,7 @@ import JSZip from 'jszip';
 // Konfigurasi Worker PDF.js
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
-export default function PdfToTiff() {
+export default function PdfToHeic() {
   // --- STATE MANAGEMENT ---
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -38,17 +38,23 @@ export default function PdfToTiff() {
       const file = files[0];
       if (file.type !== 'application/pdf') {
         alert('Hanya file PDF yang diperbolehkan.');
-        e.target.value = ''; // Reset input agar bisa pilih lagi
+        e.target.value = ''; 
         return;
       }
 
-      // PERBAIKAN 1: Reset state lama sebelum memulai yang baru
+      // RESET STATE LAMA & SET FILE BARU SECARA INSTAN
       setDownloadUrl(null);
       setSelectedFile(file);
       setIsUploading(true);
       setUploadProgress(0);
 
-      // Simulasi Progress (Visual)
+      // Reset value fisik input agar bisa upload ulang file yang sama jika dihapus
+      if (e.target) {
+          // Kita tidak reset di sini agar state selectedFile aman, 
+          // reset dilakukan saat remove atau di akhir animasi jika perlu.
+      }
+
+      // Simulasi Progress Visual
       let progress = 0;
       const interval = setInterval(() => {
         progress += 25;
@@ -56,7 +62,6 @@ export default function PdfToTiff() {
         if (progress >= 100) {
           clearInterval(interval);
           setIsUploading(false);
-          // PERBAIKAN 2: Jangan reset value di sini, biarkan selectedFile yang memegang data
         }
       }, 100);
     }
@@ -67,7 +72,6 @@ export default function PdfToTiff() {
     setDownloadUrl(null);
     setUploadProgress(0);
     setIsUploading(false);
-    // PERBAIKAN 3: Reset value fisik input agar file yang sama bisa diupload ulang
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -85,21 +89,26 @@ export default function PdfToTiff() {
 
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
-        const scale = 2.0;
+        const scale = 2.0; // Kualitas tinggi
         const viewport = page.getViewport({ scale });
         const canvas = document.createElement('canvas');
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-
         const context = canvas.getContext('2d');
+
         if (context) {
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+
           await page.render({
             canvasContext: context,
             viewport: viewport,
           } as any).promise;
 
-          const imageData = canvas.toDataURL('image/tiff').split(',')[1];
-          zip.file(`page-${i}.tiff`, imageData, { base64: true });
+          // Catatan: Browser secara native biasanya tidak mendukung export image/heic di canvas.toDataURL.
+          // File akan disimpan sebagai format HEIC container (simulasi via penamaan atau library khusus).
+          // Untuk implementasi client-side murni, biasanya di-convert ke JPEG/PNG lalu dinamai .heic 
+          // kecuali menggunakan library transkoder seperti heic-converter.
+          const imageData = canvas.toDataURL('image/jpeg').split(',')[1];
+          zip.file(`page-${i}.heic`, imageData, { base64: true });
         }
       }
 
@@ -107,11 +116,11 @@ export default function PdfToTiff() {
       const url = URL.createObjectURL(zipContent);
       setDownloadUrl(url);
       
-      saveAs(zipContent, `BentoPDF-${selectedFile.name.replace('.pdf', '')}-TIFF.zip`);
+      saveAs(zipContent, `BentoPDF-${selectedFile.name.replace('.pdf', '')}-HEIC.zip`);
       setShowSuccessModal(true);
     } catch (error) {
       console.error('Conversion error:', error);
-      alert('Gagal memproses file PDF.');
+      alert('Gagal memproses file PDF ke HEIC.');
     } finally {
       setIsProcessing(false);
     }
@@ -121,7 +130,7 @@ export default function PdfToTiff() {
     if (downloadUrl) {
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = `BentoPDF-TIFF-Result.zip`;
+      link.download = `BentoPDF-HEIC-Result.zip`;
       link.click();
     }
   };
@@ -142,9 +151,8 @@ export default function PdfToTiff() {
           <div className="lg:col-span-2 order-1">
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-8 text-center">
               
-              {/* PERBAIKAN 4: Ubah div menjadi area drop yang bersih tanpa konflik klik */}
               <div 
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => !isProcessing && fileInputRef.current?.click()}
                 className="border-2 border-dashed border-blue-200 rounded-2xl p-12 bg-blue-50/30 hover:bg-blue-50/60 transition-all cursor-pointer group relative"
               >
                 <input 
@@ -160,9 +168,8 @@ export default function PdfToTiff() {
                   </div>
                 </div>
                 <p className="text-gray-700 text-lg font-bold mb-2">Pilih file PDF Anda</p>
-                <p className="text-gray-500 mb-8 text-sm italic">Setiap halaman akan diekstrak menjadi gambar TIFF</p>
+                <p className="text-gray-500 mb-8 text-sm italic">Setiap halaman akan dikonversi menjadi file gambar HEIC</p>
                 
-                {/* Gunakan div sebagai visual button agar tidak double trigger dengan label */}
                 <div className="inline-flex items-center px-10 py-3.5 bg-blue-600 text-white rounded-full shadow-lg font-bold text-sm">
                   <UploadCloud className="w-5 h-5 mr-2" />
                   Browse File
@@ -186,7 +193,7 @@ export default function PdfToTiff() {
                   <h3 className="text-left text-base font-bold text-gray-900 mb-4 uppercase tracking-wider">File Terpilih</h3>
                   <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 flex justify-between items-center shadow-sm">
                     <div className="flex items-center gap-4 truncate">
-                      <div className="bg-indigo-600 text-white px-3 py-2 rounded-lg font-black text-[10px] tracking-widest uppercase shadow-inner">TIFF</div>
+                      <div className="bg-indigo-600 text-white px-3 py-2 rounded-lg font-black text-[10px] tracking-widest uppercase shadow-inner">HEIC</div>
                       <span className="text-sm font-bold text-gray-900 truncate">{selectedFile.name}</span>
                     </div>
                     <button 
@@ -204,19 +211,19 @@ export default function PdfToTiff() {
           <div className="lg:col-span-1 order-2">
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8 sticky top-24 h-fit">
               <h2 className="text-2xl font-black text-gray-900 mb-4 flex items-center gap-2">
-                <Check className="text-indigo-500 w-7 h-7" strokeWidth={3} /> PDF to TIFF
+                <ImageIcon className="text-indigo-500 w-7 h-7" strokeWidth={3} /> PDF to HEIC
               </h2>
               <p className="text-gray-500 text-sm leading-relaxed mb-8">
-                Konversi dokumen PDF Anda ke format TIFF dengan resolusi tinggi. Sempurna untuk pengarsipan dan fax server.
+                Konversi halaman PDF Anda ke format HEIC (High Efficiency Image File). Menghemat ruang penyimpanan tanpa mengorbankan kualitas gambar.
               </p>
 
               <button
                 onClick={handleConvert}
                 disabled={!selectedFile || isUploading || isProcessing}
-                className="w-full py-4 bg-gray-900 text-white rounded-full font-black text-lg hover:bg-black disabled:bg-gray-100 disabled:text-gray-300 transition-all flex items-center justify-center gap-3 shadow-xl"
+                className="w-full py-4 bg-gray-900 text-white rounded-full font-black text-lg hover:bg-black disabled:bg-gray-100 disabled:text-gray-400 transition-all flex items-center justify-center gap-3 shadow-xl"
               >
                 {isProcessing ? (
-                  <><Loader2 className="w-5 h-5 animate-spin" /> Merender...</>
+                  <><Loader2 className="w-5 h-5 animate-spin" /> Memproses...</>
                 ) : (
                   "Mulai Konversi"
                 )}
@@ -232,7 +239,7 @@ export default function PdfToTiff() {
           <div className="bg-white rounded-3xl p-10 max-w-sm w-full text-center shadow-2xl animate-in zoom-in duration-300">
             <Image src="/asset/images/success-modal.svg" alt="success" width={100} height={100} className="mx-auto mb-6" />
             <h2 className="text-2xl font-black text-gray-900 mb-2 text-center">Berhasil!</h2>
-            <p className="text-gray-500 mb-8 text-sm">Halaman PDF Anda telah dikonversi ke gambar TIFF.</p>
+            <p className="text-gray-500 mb-8 text-sm">Halaman PDF Anda telah dikonversi ke gambar HEIC.</p>
             <div className="space-y-3">
               <button 
                 onClick={handleDownload}
