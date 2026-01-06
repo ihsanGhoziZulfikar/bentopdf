@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useRef, ChangeEvent } from 'react';
+import React, { useState, useRef, useEffect, ChangeEvent } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import Navbar from '@/app/components/navbar';
 import ToolsFooter from '@/app/components/footer/tools-footer';
+import { ArrowLeft, Trash2, ImageIcon, Loader2, UploadCloud, Check, Settings } from 'lucide-react';
 
 // --- LIBRARY IMPORTS ---
 import * as pdfjsLib from 'pdfjs-dist';
@@ -15,8 +16,9 @@ import JSZip from 'jszip';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 export default function PdfToBmp() {
+  // --- STATE MANAGEMENT ---
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [scale, setScale] = useState(2.0);
+  const [scale, setScale] = useState(2.0); // Resolusi
   const [isProcessing, setIsProcessing] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -24,61 +26,61 @@ export default function PdfToBmp() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // --- HANDLERS ---
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const file = files[0];
 
       if (file.type !== 'application/pdf') {
-        setErrorMsg('Please select a valid PDF file.');
+        setErrorMsg('Silakan pilih file PDF yang valid.');
+        if (e.target) e.target.value = '';
         return;
       }
 
+      // LANGSUNG SET FILE
+      setSelectedFile(file);
       setErrorMsg(null);
+      setDownloadUrl(null);
       setIsUploading(true);
       setUploadProgress(0);
 
-      // Simulasi progress upload
+      if (e.target) e.target.value = '';
+
       let progress = 0;
       const interval = setInterval(() => {
-        progress += 10;
+        progress += 25;
         setUploadProgress(progress);
-
         if (progress >= 100) {
           clearInterval(interval);
-          setTimeout(() => {
-            setIsUploading(false);
-            setSelectedFile(file);
-            setUploadProgress(0);
-          }, 200);
+          setIsUploading(false);
         }
       }, 100);
-
-      setDownloadUrl(null);
     }
   };
 
   const removeFile = () => {
     setSelectedFile(null);
     setDownloadUrl(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    setUploadProgress(0);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  // --- LOGIKA KONVERSI PDF KE GAMBAR BMP ---
   const handleConvert = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-
-    if (!selectedFile) {
-      setErrorMsg('Please select a PDF file to convert.');
-      return;
-    }
+    if (!selectedFile) return;
 
     setIsProcessing(true);
     setErrorMsg(null);
-
     const zip = new JSZip();
 
     try {
@@ -88,8 +90,7 @@ export default function PdfToBmp() {
 
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
-        const viewport = page.getViewport({ scale });
-
+        const viewport = page.getViewport({ scale: scale });
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
 
@@ -98,21 +99,22 @@ export default function PdfToBmp() {
         canvas.height = viewport.height;
         canvas.width = viewport.width;
 
-        const renderContext = {
+        // Render PDF ke Canvas
+        await page.render({
           canvasContext: context,
           viewport: viewport,
-          canvas: canvas,
-        };
+          canvas: canvas, 
+        }).promise;
 
-        await page.render(renderContext).promise;
+        // Convert Canvas ke Blob BMP (Browser default to PNG/JPG, kita bungkus jadi BMP)
+        const blob = await new Promise<Blob | null>((resolve) => 
+            canvas.toBlob((b) => resolve(b), 'image/bmp')
+        );
 
-        // BMP conversion (via dataURL)
-        const imageData = canvas.toDataURL('image/bmp');
-        const base64Data = imageData.replace(/^data:image\/bmp;base64,/, '');
+        if (blob) {
+          zip.file(`halaman-${i}.bmp`, blob);
+        }
 
-        zip.file(`page-${i}.bmp`, base64Data, { base64: true });
-
-        // Cleanup memory
         canvas.width = 0;
         canvas.height = 0;
       }
@@ -123,194 +125,93 @@ export default function PdfToBmp() {
       setDownloadUrl(url);
       setIsProcessing(false);
       setShowSuccessModal(true);
+
+      saveAs(content, `BentoPDF-BMP-${selectedFile.name.replace('.pdf', '')}.zip`);
+
     } catch (error) {
-      console.error('Error converting PDF to BMP:', error);
+      console.error('BMP Conversion Error:', error);
       setIsProcessing(false);
       setShowErrorModal(true);
     }
   };
 
-  const handleDownload = () => {
-    if (downloadUrl && selectedFile) {
-      saveAs(
-        downloadUrl,
-        `BentoPDF-BMP-${selectedFile.name.replace('.pdf', '')}.zip`
-      );
-    }
-  };
-
-  const handleTryAgain = () => {
-    setShowErrorModal(false);
-    setErrorMsg(null);
-  };
-
-  const handleNext = () => {
-    setShowSuccessModal(false);
-    setDownloadUrl(null);
-    setSelectedFile(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
+  if (!mounted) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-900">
       <Navbar />
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
-        <Link
-          href="/"
-          className="inline-flex items-center text-blue-600 hover:text-blue-700 mb-4 sm:mb-8 text-sm sm:text-base"
-        >
-          <svg
-            className="w-4 h-4 sm:w-5 sm:h-5 mr-1"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
-          Back to Tools
+      <main className="max-w-7xl mx-auto px-4 py-8 flex-grow w-full">
+        <Link href="/" className="inline-flex items-center text-blue-600 hover:text-blue-700 mb-8 font-semibold transition-colors">
+          <ArrowLeft className="w-5 h-5 mr-1" />
+          <span>Back to Tools</span>
         </Link>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
-          {/* Area Upload */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* KOLOM KIRI: Upload */}
           <div className="lg:col-span-2 order-1">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-              <div className="border-2 border-dashed border-blue-300 rounded-lg p-6 sm:p-12 text-center bg-blue-50/30">
-                <div className="flex justify-center mb-4 sm:mb-6">
-                  <div className="relative w-24 h-24 sm:w-32 sm:h-32">
-                    <img
-                      src="/asset/images/upload.svg"
-                      alt="upload"
-                      className="w-full h-full object-contain"
-                    />
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-8 text-center">
+              <div 
+                onClick={() => !isProcessing && fileInputRef.current?.click()}
+                className="border-2 border-dashed border-blue-200 rounded-2xl p-12 bg-blue-50/30 hover:bg-blue-50/60 transition-all cursor-pointer group"
+              >
+                <div className="flex justify-center mb-6">
+                  <div className="relative w-24 h-24 group-hover:scale-110 transition-transform">
+                    <img src="/asset/images/upload.svg" alt="upload" className="w-full h-full object-contain" />
                   </div>
                 </div>
-                <p className="text-gray-700 text-base sm:text-lg font-medium mb-2 px-2">
-                  Drag and drop your PDF file to convert to BMP.
-                </p>
-                <p className="text-gray-500 mb-4 sm:mb-6 text-sm sm:text-base">
-                  or
-                </p>
-                <label className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-3 bg-blue-50 text-blue-600 rounded-full cursor-pointer hover:bg-blue-100 transition-colors border border-blue-200 text-sm sm:text-base">
-                  <svg
-                    className="w-4 h-4 sm:w-5 sm:h-5 mr-2"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                    />
-                  </svg>
-                  Browse PDF
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="application/pdf"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                </label>
+                <p className="text-gray-700 text-lg font-bold mb-2">Pilih file PDF Anda</p>
+                <p className="text-gray-500 mb-8 text-sm italic">Ubah halaman PDF menjadi gambar BMP tanpa kompresi</p>
+                <input ref={fileInputRef} type="file" accept="application/pdf" onChange={handleFileChange} className="hidden" />
+                <div className="inline-flex items-center px-10 py-3.5 bg-blue-600 text-white rounded-full shadow-lg font-bold text-sm">
+                  <UploadCloud className="w-5 h-5 mr-2" />
+                  Browse File
+                </div>
               </div>
 
-              {errorMsg && (
-                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs sm:text-sm">
-                  {errorMsg}
-                </div>
-              )}
-
               {isUploading && (
-                <div className="mt-4 p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center space-x-3">
-                      <svg
-                        className="w-6 h-6 text-red-500"
-                        fill="currentColor"
-                        viewBox="0 0 20 20"
-                      >
-                        <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
-                      </svg>
-                      <span className="text-sm font-medium text-gray-900">
-                        Uploading PDF...
-                      </span>
-                    </div>
+                <div className="mt-8 p-4 bg-gray-50 rounded-xl border border-gray-100 animate-in fade-in">
+                  <div className="flex justify-between text-xs font-bold mb-2 uppercase text-gray-400">
+                    <span>Membaca PDF...</span>
+                    <span>{uploadProgress}%</span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-blue-600 h-2 rounded-full transition-all"
-                      style={{ width: `${uploadProgress}%` }}
-                    ></div>
+                  <div className="w-full bg-gray-200 h-1.5 rounded-full overflow-hidden">
+                    <div className="bg-blue-600 h-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
                   </div>
                 </div>
               )}
 
-              {!isUploading && selectedFile && (
-                <div className="mt-4 p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200 flex justify-between items-center">
-                  <div className="flex items-center space-x-3 truncate">
-                    <svg
-                      className="w-6 h-6 text-red-500 flex-shrink-0"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
-                    </svg>
-                    <span className="text-sm font-medium text-gray-900 truncate">
-                      {selectedFile.name}
-                    </span>
+              {selectedFile && (
+                <div className="mt-8 animate-in slide-in-from-top-2">
+                  <h3 className="text-left text-base font-bold text-gray-900 mb-4 uppercase tracking-wider">File Terpilih</h3>
+                  <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 flex justify-between items-center shadow-sm">
+                    <div className="flex items-center gap-4 truncate">
+                      <div className="bg-indigo-600 text-white px-3 py-2 rounded-lg font-black text-[10px] tracking-widest uppercase">BMP</div>
+                      <span className="text-sm font-bold text-gray-900 truncate">{selectedFile.name}</span>
+                    </div>
+                    <button onClick={(e) => { e.stopPropagation(); removeFile(); }} className="text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors">
+                      <Trash2 className="w-5 h-5" />
+                    </button>
                   </div>
-                  <button
-                    onClick={removeFile}
-                    className="text-red-500 hover:text-red-700 p-1"
-                  >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
-                  </button>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Panel Pengaturan */}
+          {/* KOLOM KANAN: Sidebar */}
           <div className="lg:col-span-1 order-2">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-2">
-                PDF to BMP
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8 sticky top-24 h-fit">
+              <h2 className="text-2xl font-black text-gray-900 mb-4 flex items-center gap-2">
+                <Settings className="text-blue-600 w-7 h-7" /> Settings
               </h2>
-              <p className="text-gray-600 mb-6 text-sm">
-                Convert PDF pages into uncompressed BMP format for high-fidelity
-                imaging.
+              <p className="text-gray-500 text-sm leading-relaxed mb-8 font-medium">
+                Sesuaikan resolusi gambar BMP yang dihasilkan. BMP memberikan kualitas gambar asli tanpa kompresi.
               </p>
 
               {selectedFile && !isUploading && (
-                <div className="mb-6">
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="text-sm font-medium text-gray-700">
-                      Resolution
-                    </label>
-                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-bold">
-                      {scale.toFixed(1)}x
-                    </span>
+                <div className="mb-8 p-4 bg-gray-50 rounded-xl border border-gray-100">
+                  <div className="flex justify-between items-center mb-3">
+                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest">Resolusi</label>
+                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-bold">{scale.toFixed(1)}x</span>
                   </div>
                   <input
                     type="range"
@@ -327,30 +228,12 @@ export default function PdfToBmp() {
               <button
                 onClick={handleConvert}
                 disabled={!selectedFile || isUploading || isProcessing}
-                className="w-full py-3 bg-gray-900 text-white rounded-3xl hover:bg-gray-800 disabled:bg-gray-300 transition-all font-medium flex items-center justify-center gap-2"
+                className="w-full py-4 bg-gray-900 text-white rounded-full font-black text-lg hover:bg-black disabled:bg-gray-100 disabled:text-gray-300 transition-all flex items-center justify-center gap-3 shadow-xl"
               >
                 {isProcessing ? (
-                  <>
-                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>{' '}
-                    Processing...
-                  </>
+                  <><Loader2 className="w-5 h-5 animate-spin" /> Merender...</>
                 ) : (
-                  <>
-                    Convert to BMP{' '}
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="M13 10V3L4 14h7v7l9-11h-7z"
-                      />
-                    </svg>
-                  </>
+                  "Mulai Konversi"
                 )}
               </button>
             </div>
@@ -358,68 +241,14 @@ export default function PdfToBmp() {
         </div>
       </main>
 
-      {/* Success Modal */}
+      {/* SUCCESS MODAL */}
       {showSuccessModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full text-center shadow-2xl animate-in fade-in zoom-in duration-300">
-            <Image
-              src="/asset/images/success-modal.svg"
-              alt="success"
-              width={60}
-              height={60}
-              className="mx-auto mb-4"
-            />
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              BMP Ready!
-            </h2>
-            <p className="text-gray-600 mb-6">
-              Your PDF pages have been converted to BMP successfully.
-            </p>
-            <button
-              onClick={handleDownload}
-              className="text-blue-600 font-semibold hover:underline mb-6 block w-full text-sm"
-            >
-              Download ZIP manually
-            </button>
-            <button
-              onClick={handleNext}
-              className="w-full bg-blue-600 text-white font-semibold py-3 rounded-full hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-            >
-              Finish{' '}
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path d="M9 5l7 7-7 7" strokeWidth="2" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Error Modal */}
-      {showErrorModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full text-center shadow-2xl animate-in fade-in zoom-in duration-300">
-            <Image
-              src="/asset/images/failed-modal.svg"
-              alt="failed"
-              width={60}
-              height={60}
-              className="mx-auto mb-4"
-            />
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Failed!</h2>
-            <p className="text-gray-600 mb-6">
-              Something went wrong during the BMP conversion process.
-            </p>
-            <button
-              onClick={handleTryAgain}
-              className="w-full bg-blue-600 text-white font-semibold py-3 rounded-full hover:bg-blue-700"
-            >
-              Try Again
-            </button>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-3xl p-10 max-w-sm w-full text-center shadow-2xl animate-in zoom-in duration-300">
+            <Image src="/asset/images/success-modal.svg" alt="success" width={100} height={100} className="mx-auto mb-6" />
+            <h2 className="text-2xl font-black text-gray-900 mb-2">Berhasil!</h2>
+            <button onClick={() => saveAs(downloadUrl!, 'BentoPDF-Result.zip')} className="w-full py-4 bg-blue-600 text-white rounded-full font-bold mb-3 shadow-lg hover:bg-blue-700 transition-all">Download ZIP</button>
+            <button onClick={() => {setShowSuccessModal(false); setSelectedFile(null);}} className="w-full py-3 text-gray-400 font-bold hover:text-gray-900">Konversi Lagi</button>
           </div>
         </div>
       )}
