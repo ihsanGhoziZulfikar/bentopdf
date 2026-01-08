@@ -2,118 +2,107 @@
 
 import React, { useState, useRef, ChangeEvent } from 'react';
 import Link from 'next/link';
-import Navbar from '@/app/components/navbar';
-import ToolsFooter from '../../components/footer/tools-footer';
-import Image from 'next/image';
+import Navbar from '../../components/navbar'; // Pastikan path sesuai struktur folder Anda
+import ToolsFooter from '../../components/footer/main-footer'; // Sesuaikan jika menggunakan ToolsFooter
+import { FileText, Download, Loader2, ArrowLeft, UploadCloud, CheckCircle, XCircle, Trash2, FileType } from 'lucide-react';
 
-export default function JpgToPdf() {
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [quality, setQuality] = useState('medium');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [uploadingFiles, setUploadingFiles] = useState<
-    { name: string; size: number; progress: number }[]
-  >([]);
-  const [isUploading, setIsUploading] = useState(false);
+import * as pdfjsLib from 'pdfjs-dist';
+import { Document, Packer, Paragraph, TextRun } from 'docx';
+import { saveAs } from 'file-saver';
+
+// Konfigurasi Worker PDF.js
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+
+export default function PdfToWordPage() {
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // --- LOGIC UTAMA (TIDAK DIHAPUS) ---
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const newFiles = Array.from(e.target.files);
-      const jpgFiles = newFiles.filter(
-        (f) =>
-          f.type === 'image/jpeg' ||
-          f.name.toLowerCase().endsWith('.jpg') ||
-          f.name.toLowerCase().endsWith('.jpeg')
-      );
-
-      if (jpgFiles.length !== newFiles.length) {
-        setErrorMsg('Some files were skipped because they are not JPG/JPEG images.');
-      } else {
+    if (e.target.files && e.target.files[0]) {
+      const selectedFile = e.target.files[0];
+      if (selectedFile.type === 'application/pdf') {
+        setFile(selectedFile);
         setErrorMsg(null);
+      } else {
+        setErrorMsg('Please upload a valid PDF file.');
       }
-
-      setIsUploading(true);
-
-      const uploadFiles = jpgFiles.map((f) => ({
-        name: f.name,
-        size: f.size,
-        progress: 0,
-      }));
-
-      setUploadingFiles(uploadFiles);
-
-      jpgFiles.forEach((file, index) => {
-        let progress = 0;
-        const interval = setInterval(() => {
-          progress += 10;
-          setUploadingFiles((prev) => {
-            const updated = [...prev];
-            if (updated[index]) updated[index].progress = progress;
-            return updated;
-          });
-
-          if (progress >= 100) {
-            clearInterval(interval);
-            setTimeout(() => {
-              if (index === jpgFiles.length - 1) {
-                setIsUploading(false);
-                setSelectedFiles((prev) => [...prev, ...jpgFiles]);
-                setUploadingFiles([]);
-              }
-            }, 200);
-          }
-        }, 100);
-      });
-
-      setDownloadUrl(null);
     }
   };
 
-  const removeFile = (index: number) => {
-    setSelectedFiles(selectedFiles.filter((_, i) => i !== index));
-  };
-
-  const moveFile = (index: number, direction: 'up' | 'down') => {
-    const newFiles = [...selectedFiles];
-    const newIndex = direction === 'up' ? index - 1 : index + 1;
-    if (newIndex >= 0 && newIndex < selectedFiles.length) {
-      [newFiles[index], newFiles[newIndex]] = [newFiles[newIndex], newFiles[index]];
-      setSelectedFiles(newFiles);
-    }
-  };
-
-  const handleConvert = async (e: React.MouseEvent<HTMLButtonElement>) => {
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-
-    if (selectedFiles.length === 0) {
-      setErrorMsg('Please select at least 1 JPG file to convert.');
-      return;
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const droppedFile = e.dataTransfer.files[0];
+      if (droppedFile.type === 'application/pdf') {
+        setFile(droppedFile);
+        setErrorMsg(null);
+      } else {
+        setErrorMsg('Please upload a valid PDF file.');
+      }
     }
+  };
 
-    setIsProcessing(true);
+  const removeFile = () => {
+    setFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const convertToWord = async () => {
+    if (!file) return;
+    setLoading(true);
     setErrorMsg(null);
 
-    // Simulasi proses konversi dengan kemungkinan success/error
-    setTimeout(() => {
-      setIsProcessing(false);
-      
-      // Simulasi random success/error (80% success, 20% error)
-      const isSuccess = Math.random() > 0.2;
-      
-      if (isSuccess) {
-        // Success - tampilkan modal success
-        setDownloadUrl('#download-url'); // Placeholder URL
-        setShowSuccessModal(true);
-      } else {
-        // Error - tampilkan modal error
-        setShowErrorModal(true);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const docSections = [];
+
+      // Ekstraksi teks dari setiap halaman
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        
+        // Mengelompokkan teks sederhana
+        const pageText = textContent.items
+          .map((item: any) => item.str)
+          .join(' ');
+
+        docSections.push({
+          properties: {},
+          children: [
+            new Paragraph({
+              children: [new TextRun({ text: pageText, size: 24 })],
+            }),
+          ],
+        });
       }
-    }, 2000);
+
+      // Generate file Word
+      const doc = new Document({ sections: docSections });
+      const blob = await Packer.toBlob(doc);
+      
+      // Trigger download
+      saveAs(blob, `${file.name.replace('.pdf', '')}.docx`);
+      
+      setShowSuccessModal(true);
+    } catch (error) {
+      console.error("Conversion failed", error);
+      setShowErrorModal(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+  // --- END LOGIC ---
+
+  const handleNext = () => {
+    setShowSuccessModal(false);
+    setFile(null);
   };
 
   const handleTryAgain = () => {
@@ -121,280 +110,147 @@ export default function JpgToPdf() {
     setErrorMsg(null);
   };
 
-  const handleNext = () => {
-    setShowSuccessModal(false);
-    setDownloadUrl(null);
-    setSelectedFiles([]);
-  };
-
-  const handleDownload = () => {
-    // Logic untuk download file
-    alert('Downloading PDF...');
-  };
-
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <Navbar />
 
-      {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
-        <Link href="/" className="inline-flex items-center text-blue-600 hover:text-blue-700 mb-4 sm:mb-8 text-sm sm:text-base">
-          <svg className="w-4 h-4 sm:w-5 sm:h-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-          </svg>
+        {/* Back Button */}
+        <Link href="/" className="inline-flex items-center text-blue-600 hover:text-blue-700 mb-4 sm:mb-8 text-sm sm:text-base transition-colors">
+          <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 mr-1" />
           Back to Tools
         </Link>
 
+        {/* Main Grid Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
-          {/* Upload Area */}
+          
+          {/* LEFT COLUMN: Upload Area */}
           <div className="lg:col-span-2 order-1 lg:order-1">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-              {/* Drop Zone - Selalu Tampil */}
-              <div className="border-2 border-dashed border-blue-300 rounded-lg p-6 sm:p-12 text-center bg-blue-50/30">
+              
+              {/* Drop Zone */}
+              <div 
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-lg p-6 sm:p-12 text-center transition-colors ${
+                  file ? 'border-green-300 bg-green-50/30' : 'border-blue-300 bg-blue-50/30'
+                }`}
+              >
                 <div className="flex justify-center mb-4 sm:mb-6">
-                  <div className="relative w-24 h-24 sm:w-32 sm:h-32">
-                    <img src="/asset/images/upload.svg" alt="upload" className="w-full h-full object-contain" />
+                  <div className="relative w-24 h-24 sm:w-32 sm:h-32 flex items-center justify-center bg-white rounded-full shadow-sm">
+                    {file ? (
+                       <FileText className="w-12 h-12 sm:w-16 sm:h-16 text-green-500" />
+                    ) : (
+                       <UploadCloud className="w-12 h-12 sm:w-16 sm:h-16 text-blue-500" />
+                    )}
                   </div>
                 </div>
+                
                 <p className="text-gray-700 text-base sm:text-lg font-medium mb-2 px-2">
-                  Drag and drop your JPG files here to start.
+                  {file ? "File ready to convert" : "Drag and drop your PDF file here"}
                 </p>
-                <p className="text-gray-500 mb-4 sm:mb-6 text-sm sm:text-base">or</p>
-                <label className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-3 bg-blue-50 text-blue-600 rounded-full cursor-pointer hover:bg-blue-100 transition-colors border border-blue-200 text-sm sm:text-base">
-                  <svg className="w-4 h-4 sm:w-5 sm:h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                  Browse
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept="image/jpeg, .jpg, .jpeg"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                </label>
+                
+                {!file && (
+                  <>
+                    <p className="text-gray-500 mb-4 sm:mb-6 text-sm sm:text-base">or</p>
+                    <label className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-3 bg-blue-50 text-blue-600 rounded-full cursor-pointer hover:bg-blue-100 transition-colors border border-blue-200 text-sm sm:text-base font-medium">
+                      <UploadCloud className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+                      Browse File
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".pdf"
+                        onChange={handleFileChange}
+                        className="hidden"
+                      />
+                    </label>
+                  </>
+                )}
+                
                 <div className="mt-4 sm:mt-6 flex items-center justify-center text-xs sm:text-sm text-blue-600 px-2">
-                  <svg className="w-3 h-3 sm:w-4 sm:h-4 mr-1 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                  </svg>
-                  Supported formats: JPG, JPEG (Max. 10 MB)
+                  <FileType className="w-3 h-3 sm:w-4 sm:h-4 mr-1 flex-shrink-0" />
+                  Supported format: PDF (Max. 10 MB)
                 </div>
               </div>
 
               {/* Error Message */}
               {errorMsg && (
-                <div className="mt-4 p-3 sm:p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs sm:text-sm">
-                  {errorMsg}
+                <div className="mt-4 p-3 sm:p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs sm:text-sm flex items-center">
+                  <XCircle className="w-4 h-4 mr-2" /> {errorMsg}
                 </div>
               )}
 
-              {/* GAMBAR 1 - Uploading Files dengan Progress Bar */}
-              {isUploading && uploadingFiles.length > 0 && (
-                <div className="mt-4 space-y-3">
-                  {uploadingFiles.map((file, index) => (
-                    <div
-                      key={`uploading-${index}`}
-                      className="p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
-                          <svg className="w-6 h-6 sm:w-8 sm:h-8 text-blue-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
-                          </svg>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-gray-900 truncate font-medium text-sm sm:text-base">{file.name}</p>
-                            <p className="text-gray-500 text-xs sm:text-sm">{(file.size / 1024).toFixed(1)} KB</p>
-                          </div>
-                        </div>
-                        <button className="p-1.5 sm:p-2 text-gray-400 hover:text-red-500 transition-colors">
-                          <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div 
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${file.progress}%` }}
-                        ></div>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1 text-right">{file.progress}%</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Success Message */}
-              {downloadUrl && !isUploading && !showSuccessModal && (
-                <div className="mt-4 p-3 sm:p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <p className="text-green-800 font-semibold mb-3 flex items-center text-sm sm:text-base">
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                    Conversion Successful!
-                  </p>
-                  <a
-                    href={downloadUrl}
-                    download="bento-converted.pdf"
-                    className="inline-block px-4 sm:px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors text-sm sm:text-base"
-                  >
-                    Download PDF
-                  </a>
-                  <button
-                    onClick={() => {
-                      setDownloadUrl(null);
-                      setSelectedFiles([]);
-                    }}
-                    className="ml-2 sm:ml-3 text-xs sm:text-sm text-gray-600 hover:text-gray-900 underline"
-                  >
-                    Convert Another File
-                  </button>
-                </div>
-              )}
-
-              {/* GAMBAR 2 - Uploaded Files Grid dengan Thumbnail */}
-              {!isUploading && selectedFiles.length > 0 && (
-                <div className="mt-4">
+              {/* Selected File Card */}
+              {file && (
+                <div className="mt-6">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-base sm:text-lg font-semibold text-gray-900">
-                      Files to Convert ({selectedFiles.length})
+                      Selected File
                     </h3>
                   </div>
                   
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                    {selectedFiles.map((file, index) => (
-                      <div
-                        key={`file-${index}`}
-                        className="relative group bg-gray-50 rounded-lg border border-gray-200 p-3 hover:border-gray-300 transition-colors"
-                      >
-                        {/* Thumbnail Preview */}
-                        <div className="aspect-square bg-gray-200 rounded mb-2 flex items-center justify-center overflow-hidden">
-                          <svg className="w-12 h-12 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
-                          </svg>
-                        </div>
-                        
-                        {/* File Info */}
-                        <p className="text-xs text-gray-900 truncate font-medium mb-1">{file.name}</p>
-                        <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(1)} KB</p>
-
-                        {/* Action Buttons - Show on Hover */}
-                        <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => moveFile(index, 'up')}
-                            disabled={index === 0}
-                            className="p-1 bg-white rounded shadow-sm text-gray-600 hover:text-blue-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="Move up"
-                          >
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => moveFile(index, 'down')}
-                            disabled={index === selectedFiles.length - 1}
-                            className="p-1 bg-white rounded shadow-sm text-gray-600 hover:text-blue-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="Move down"
-                          >
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => removeFile(index)}
-                            className="p-1 bg-white rounded shadow-sm text-red-500 hover:text-red-700"
-                            title="Remove file"
-                          >
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </div>
-
-                        {/* Order Badge */}
-                        <div className="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1.5 py-0.5 rounded">
-                          {index + 1}
-                        </div>
+                  <div className="relative group bg-gray-50 rounded-lg border border-gray-200 p-4 hover:border-blue-300 transition-all flex items-center justify-between">
+                    <div className="flex items-center gap-4 overflow-hidden">
+                      <div className="w-12 h-12 bg-white rounded-lg border border-gray-200 flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-6 h-6 text-red-500" />
                       </div>
-                    ))}
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                        <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                      </div>
+                    </div>
 
-                    {/* Add More Button */}
-                    <label className="aspect-square border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 hover:bg-blue-50/30 transition-colors flex flex-col items-center justify-center p-3">
-                      <svg className="w-8 h-8 text-gray-400 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                      </svg>
-                      <span className="text-xs text-gray-600 font-medium text-center">Add more</span>
-                      <input
-                        type="file"
-                        multiple
-                        accept="image/jpeg, .jpg, .jpeg"
-                        onChange={handleFileChange}
-                        className="hidden"
-                      />
-                    </label>
+                    <button
+                      onClick={removeFile}
+                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-white rounded-full transition-all"
+                      title="Remove file"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
                   </div>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Info Panel */}
+          {/* RIGHT COLUMN: Info Panel & Action */}
           <div className="lg:col-span-1 order-1 lg:order-2">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 sticky top-24">
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-                JPG to PDF
+                PDF to Word
               </h2>
-              <p className="text-gray-600 mb-4 sm:mb-6 text-sm sm:text-base">
-                Convert your JPG images into a single PDF file with custom quality settings.
+              <p className="text-gray-600 mb-6 text-sm sm:text-base leading-relaxed">
+                Convert your PDF documents into editable Word (.docx) files instantly. Preserves text and basic layout.
               </p>
-
-              {/* Quality Settings */}
-              {selectedFiles.length > 0 && !isUploading && (
-                <div className="mb-4 sm:mb-6">
-                  <label htmlFor="quality" className="block mb-2 text-sm font-medium text-gray-700">
-                    PDF Quality
-                  </label>
-                  <select
-                    id="quality"
-                    value={quality}
-                    onChange={(e) => setQuality(e.target.value)}
-                    className="w-full bg-white border border-gray-300 text-gray-900 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                  >
-                    <option value="high">High Quality (Larger file)</option>
-                    <option value="medium">Medium Quality (Balance)</option>
-                    <option value="low">Low Quality (Smaller file)</option>
-                  </select>
-                  <p className="mt-1 text-xs text-gray-500">
-                    Controls image compression when embedding into PDF
-                  </p>
-                </div>
-              )}
 
               <button
                 type="button"
-                onClick={handleConvert}
-                disabled={selectedFiles.length === 0 || isUploading || isProcessing}
-                className="mx-auto w-auto py-2.5 sm:py-3 px-4 sm:px-6 bg-blue-700 text-white rounded-3xl hover:bg-blue-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center font-medium text-sm sm:text-base"
+                onClick={convertToWord}
+                disabled={!file || loading}
+                className={`w-full py-3 px-6 rounded-full flex items-center justify-center font-semibold text-sm sm:text-base transition-all shadow-md hover:shadow-lg ${
+                  !file || loading
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
               >
-                {isProcessing ? (
+                {loading ? (
                   <>
-                    <svg className="animate-spin -ml-1 mr-2 sm:mr-3 h-4 w-4 sm:h-5 sm:w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
+                    <Loader2 className="animate-spin mr-2 h-5 w-5" />
                     Converting...
                   </>
                 ) : (
                   <>
-                    Convert to PDF
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                    </svg>
+                    Convert to Word
+                    <Download className="w-5 h-5 ml-2" />
                   </>
                 )}
               </button>
+              
+              {!file && (
+                <p className="text-xs text-center text-gray-400 mt-3">
+                  Please select a file to enable conversion
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -403,32 +259,24 @@ export default function JpgToPdf() {
       {/* Success Modal */}
       {showSuccessModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-lg w-auto text-center animate-in fade-in zoom-in duration-300">
-            {/* Success Icon */}
-            <div className="flex justify-center">
-              <Image className="w-50 h-50 text-white" src="/asset/images/success-modal.svg" alt="success" width={50} height={50} />
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-lg w-full text-center animate-in fade-in zoom-in duration-300">
+            <div className="flex justify-center mb-6">
+              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center">
+                 <CheckCircle className="w-10 h-10 text-green-600" />
+              </div>
             </div>
 
-            {/* Title */}
             <h2 className="text-2xl font-bold text-gray-900 mb-3">Success!</h2>
-
-            {/* Message */}
-            <p className="text-gray-600 mb-2">
-              The download will start automatically.
-            </p>
-            <p className="text-gray-600 mb-6">
-              If not, click <button onClick={handleDownload} className="text-yellow-400 font-semibold hover:underline">Download</button> to manually save the file.
+            <p className="text-gray-600 mb-8">
+              Your file has been converted and downloaded successfully.
             </p>
 
-            {/* Button */}
             <button
               onClick={handleNext}
-              className="block mx-auto w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-full transition-colors flex items-center justify-center gap-2"
+              className="mx-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-full transition-colors flex items-center justify-center gap-2"
             >
-              Next
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-              </svg>
+              Convert Another File
+              <ArrowLeft className="w-5 h-5 rotate-180" />
             </button>
           </div>
         </div>
@@ -438,34 +286,28 @@ export default function JpgToPdf() {
       {showErrorModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center animate-in fade-in zoom-in duration-300">
-            {/* Error Icon */}
-            <div className="flex justify-center">
-              <Image className="w-50 h-50 text-white" src="/asset/images/failed-modal.svg" alt="success" width={50} height={50} />
+            <div className="flex justify-center mb-6">
+               <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center">
+                 <XCircle className="w-10 h-10 text-red-600" />
+              </div>
             </div>
 
-            {/* Title */}
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">Failed!</h2>
-
-            {/* Message */}
-            <p className="text-gray-600 mb-6">
-              Unable to convert the file to PDF. Please try again.
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">Conversion Failed</h2>
+            <p className="text-gray-600 mb-8">
+              Unable to convert the file. Please ensure the PDF is not password protected and try again.
             </p>
 
-            {/* Button */}
             <button
               onClick={handleTryAgain}
-              className="block mx-auto w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-full transition-colors flex items-center justify-center gap-2"
+              className="mx-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-full transition-colors flex items-center justify-center gap-2"
             >
               Try Again
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-              </svg>
+              <ArrowLeft className="w-5 h-5 rotate-180" />
             </button>
           </div>
         </div>
       )}
 
-      {/* Footer */}
       <ToolsFooter />
     </div>
   );
