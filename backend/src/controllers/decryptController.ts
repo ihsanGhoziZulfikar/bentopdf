@@ -1,70 +1,83 @@
 import { Request, Response } from 'express';
-import { PDFDocument } from 'pdf-lib';
 import fs from 'fs-extra';
-import * as pdfjsLib from 'pdfjs-dist';
+import path from 'path';
+import { spawn } from 'child_process';
 
-export const decryptPDF = async (req: Request, res: Response) => {
-  let inputPath: string | null = null;
+interface ApiErrorResponse {
+  message: string;
+}
+
+export const decryptPDF = async (
+  req: Request,
+  res: Response
+): Promise<void | Response<ApiErrorResponse>> => {
+  let inputPath = '';
+  let outputPath = '';
 
   try {
-    // 1. Cek apakah file ada (Multer menaruhnya di req.file)
-    if (!req.file) {
+    // Memberikan tipe data pada file dari Multer
+    const file = req.file as Express.Multer.File;
+    if (!file) {
       return res.status(400).json({ message: 'No PDF file uploaded.' });
     }
 
-    inputPath = req.file.path;
-    const { password } = req.body; // Diambil dari formData.append('password', ...)
-
+    const { password } = req.body as { password?: string };
     if (!password) {
-      if (inputPath) await fs.unlink(inputPath).catch(() => {});
-      return res
-        .status(400)
-        .json({ message: 'Password is required to unlock this file.' });
+      await fs.remove(file.path);
+      return res.status(400).json({ message: 'Password is required.' });
     }
 
-    // 2. Baca file dari sistem
-    const existingPdfBytes = await fs.readFile(inputPath);
+    inputPath = path.resolve(file.path);
+    const fileName = `unlocked_${Date.now()}_${file.originalname}`;
+    const uploadsDir = path.resolve('uploads');
 
-    // 3. Proses Decrypt menggunakan pdfjs-dist untuk handle password
-    let pdfDoc;
-    try {
-      // Gunakan pdfjs untuk unlock encrypted PDF dengan password
-      const pdf = await pdfjsLib.getDocument({ data: existingPdfBytes, password: password }).promise;
-      
-      // Setelah ter-unlock, load ke pdf-lib untuk manipulasi
-      pdfDoc = await PDFDocument.load(existingPdfBytes);
-    } catch (err: any) {
-      // Jika password salah, pdfjs akan melempar error
-      return res.status(401).json({
-        message: 'The password you entered is incorrect.',
+    await fs.ensureDir(uploadsDir);
+    outputPath = path.join(uploadsDir, fileName);
+
+    const qpdfPath = 'C:\\qpdf\\bin\\qpdf.exe';
+    const args = ['--decrypt', `--password=${password}`, inputPath, outputPath];
+
+    await new Promise<void>((resolve, reject) => {
+      const p = spawn(qpdfPath, args, { windowsHide: true });
+      let errorMsg = '';
+
+      p.stderr.on('data', (data: Buffer) => {
+        errorMsg += data.toString();
       });
-    }
 
-    // 4. Simpan PDF (pdf-lib akan menyimpan tanpa enkripsi secara default jika tidak diset ulang)
-    const decryptedPdfBytes = await pdfDoc.save();
-
-    // 5. Setting Header untuk Download
-    const outputFilename = `unlocked_${req.file.originalname}`;
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${outputFilename}"`
-    );
-
-    // Kirim binary file
-    return res.send(Buffer.from(decryptedPdfBytes));
-  } catch (error: any) {
-    console.error('🔥 Decrypt Error:', error);
-    return res.status(500).json({
-      message: 'Failed to process PDF.',
-      details: error.message,
+      p.on('close', (code: number) => {
+        if (code === 0) resolve();
+        else {
+          if (errorMsg.toLowerCase().includes('password') || code === 2) {
+            reject(new Error('INVALID_PASSWORD'));
+          } else {
+            reject(new Error(errorMsg || 'Decryption failed'));
+          }
+        }
+      });
     });
-  } finally {
-    // 6. Cleanup: Hapus file temporary di folder uploads
-    if (inputPath) {
-      await fs
-        .unlink(inputPath)
-        .catch((err) => console.error('Cleanup Error:', err));
+
+    res.download(outputPath, fileName, async (err) => {
+      try {
+        if (fs.existsSync(inputPath)) await fs.remove(inputPath);
+        setTimeout(async () => {
+          if (fs.existsSync(outputPath)) await fs.remove(outputPath);
+        }, 5000);
+      } catch (e) {
+        console.error('Cleanup error:', e);
+      }
+    });
+  } catch (error: unknown) {
+    if (inputPath && fs.existsSync(inputPath)) await fs.remove(inputPath);
+
+    const err = error as Error;
+    if (err.message === 'INVALID_PASSWORD') {
+      return res
+        .status(401)
+        .json({ message: 'Password salah! Silakan periksa kembali.' });
     }
+    return res
+      .status(500)
+      .json({ message: 'Gagal memproses file. Pastikan file PDF valid.' });
   }
 };

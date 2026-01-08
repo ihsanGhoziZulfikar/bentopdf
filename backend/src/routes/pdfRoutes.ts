@@ -1,11 +1,5 @@
-import {
-  Router,
-  Request,
-  Response,
-  NextFunction,
-  RequestHandler,
-} from 'express';
-import multer from 'multer'; // Import library multer untuk cek tipe error
+import { Router, Request, Response, NextFunction } from 'express';
+import multer from 'multer';
 import { upload } from '../config/multer';
 
 // Controllers
@@ -22,46 +16,100 @@ import { decryptPDF } from '../controllers/decryptController';
 const router = Router();
 
 /**
- * WRAPPER FUNCTION:
- * Gunanya untuk menangkap error saat upload (seperti 'Unexpected end of form')
- * agar server TIDAK CRASH (mati).
+ * CORS Middleware Khusus Multer
+ * - Harus dipasang sebelum Multer
+ * - Menangani preflight OPTIONS
  */
-const handleUpload = (multerMiddleware: RequestHandler) => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (req.method === 'OPTIONS') {
-      return res.sendStatus(200);
-    }
+const multerCors = (req: Request, res: Response, next: NextFunction) => {
+  res.header('Access-Control-Allow-Origin', 'http://localhost:3000');
+  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-    multerMiddleware(req, res, (err: any) => {
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+};
+
+/**
+ * Wrapper Multer
+ * - Fokus hanya untuk menangkap error Multer
+ */
+const handleUpload =
+  (
+    multerMiddleware: (
+      req: Request,
+      res: Response,
+      callback: (err?: unknown) => void
+    ) => void
+  ) =>
+  (req: Request, res: Response, next: NextFunction) => {
+    multerMiddleware(req, res, (err: unknown) => {
       if (err instanceof multer.MulterError) {
-        console.error(`[Multer Error] ${err.message}`);
-        return res.status(400).json({
-          message: `Upload Error: ${err.message}`,
-          code: err.code,
-        });
+        return res
+          .status(400)
+          .json({ message: `Upload Error: ${err.message}` });
       }
-
       if (err) {
-        console.error(`[Upload Error] ${err.message}`);
-        return res.status(400).json({
-          message: 'Upload failed. Connection interrupted or file corrupt.',
-        });
+        const error = err as Error;
+        if (error.message === 'Unexpected end of form') return;
+        return res.status(400).json({ message: 'Upload failed.' });
       }
-
       next();
     });
   };
-};
 
-// Routes dengan Wrapper
-router.post('/compress', handleUpload(upload.single('file')), compressPdf);
-router.post('/merge', handleUpload(upload.array('files', 10)), mergePdf); // Perhatikan ini array
-router.post('/split', handleUpload(upload.single('file')), splitPdf);
-router.post('/pdf/encrypt', upload.single('file'), encryptPDF);
-router.post('/summarize', upload.single('file'), summarizePdf);
-router.post('/repair', handleUpload(upload.single('file')), repairPDF);
-router.post('/pdf/decrypt', upload.single('file'), decryptPDF);
-router.post('/ocr', handleUpload(upload.single('file')), ocrPDF);
-router.post('/pdf-to-word', handleUpload(upload.single('file')), pdfToWord);
+// ==========================
+// ROUTES PDF
+// ==========================
+
+// Gunakan multerCors + handleUpload di semua route upload
+router.post(
+  '/compress',
+  multerCors,
+  handleUpload(upload.single('file')),
+  compressPdf
+);
+router.post(
+  '/merge',
+  multerCors,
+  handleUpload(upload.array('files', 10)),
+  mergePdf
+);
+router.post(
+  '/split',
+  multerCors,
+  handleUpload(upload.single('file')),
+  splitPdf
+);
+router.post(
+  '/encrypt',
+  multerCors,
+  handleUpload(upload.single('file')),
+  encryptPDF
+);
+router.post(
+  '/summarize',
+  multerCors,
+  handleUpload(upload.single('file')),
+  summarizePdf
+);
+router.post(
+  '/repair',
+  multerCors,
+  handleUpload(upload.single('file')),
+  repairPDF
+);
+router.post(
+  '/decrypt',
+  multerCors,
+  handleUpload(upload.single('file')),
+  decryptPDF
+);
+router.post('/ocr', multerCors, handleUpload(upload.single('file')), ocrPDF);
+router.post(
+  '/pdf-to-word',
+  multerCors,
+  handleUpload(upload.single('file')),
+  pdfToWord
+);
 
 export default router;

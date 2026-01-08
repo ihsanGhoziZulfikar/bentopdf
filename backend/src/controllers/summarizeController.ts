@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import fs from 'fs';
 
-// ✅ SEKARANG INI FUNCTION
 const pdfParse = require('pdf-parse');
 
 export const summarizePdf = async (req: Request, res: Response) => {
@@ -13,7 +12,6 @@ export const summarizePdf = async (req: Request, res: Response) => {
     const filePath = req.file.path;
     const dataBuffer = fs.readFileSync(filePath);
 
-    // ✅ AKHIRNYA AMAN
     const pdfData = await pdfParse(dataBuffer);
     const extractedText = pdfData.text;
 

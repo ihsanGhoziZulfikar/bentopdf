@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, ChangeEvent } from 'react';
+import React, { useState, ChangeEvent, useRef } from 'react';
 import Link from 'next/link';
 import Navbar from '../components/navbar';
 import ToolsFooter from '../components/footer/tools-footer';
@@ -39,6 +39,7 @@ export default function EncryptPDF() {
 
   // State PENTING: Untuk menangani gambar error
   const [imageError, setImageError] = useState(false);
+  const encryptLock = useRef(false);
 
   // --- LOGIC SIMULASI UPLOAD ---
   const simulateUpload = (file: File) => {
@@ -118,9 +119,14 @@ export default function EncryptPDF() {
 
   // --- BACKEND REQUEST ---
   const handleEncrypt = async () => {
-    if (isProcessing) return;
-    if (selectedFiles.length === 0 || !userPassword) return;
+    if (encryptLock.current || isProcessing) return;
 
+    if (selectedFiles.length === 0 || !userPassword) {
+      setErrorMsg('Please select a PDF and enter a user password.');
+      return;
+    }
+
+    encryptLock.current = true;
     setIsProcessing(true);
     setErrorMsg(null);
 
@@ -130,34 +136,37 @@ export default function EncryptPDF() {
       formData.append('userPassword', userPassword);
       if (ownerPassword) formData.append('ownerPassword', ownerPassword);
 
-      const response = await fetch('http://localhost:5000/api/pdf/encrypt', {
+      const response = await fetch('/api/encrypt', {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || 'Encrypt failed');
+        const json = await response.json().catch(() => null);
+        throw new Error(json?.message || 'Encryption failed on server');
       }
 
-      // ✅ TUNGGU FILE 100% SELESAI
-      const buffer = await response.arrayBuffer();
-      const blob = new Blob([buffer], { type: 'application/pdf' });
+      // Ambil sebagai Blob
+      const blob = await response.blob();
+      if (blob.size === 0) throw new Error('Received empty file from server');
 
       const url = window.URL.createObjectURL(blob);
       setDownloadUrl(url);
 
+      // Trigger Download Otomatis
       const a = document.createElement('a');
       a.href = url;
       a.download = `protected_${selectedFiles[0].name}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-    } catch (err) {
-      console.error(err);
-      setErrorMsg(err instanceof Error ? err.message : 'Encrypt failed');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (err: any) {
+      console.error('Encrypt Error:', err);
+      setErrorMsg(err.message || 'Encryption failed.');
     } finally {
       setIsProcessing(false);
+      encryptLock.current = false;
     }
   };
 
